@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge,chrome=1">
+    <title>GridWorld - DP</title>
+    <meta name="description" content="">
+    <meta name="author" content="">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.2.1/css/bootstrap.min.css" integrity="sha384-GJzZqFGwb1QTTN6wy59ffF1BuGJpLSa9DkKMp0DgiMDm4iYMj70gZWKYbI706tWS" crossorigin="anonymous">
+    <script src="https://code.jquery.com/jquery-2.1.3.min.js" crossorigin="anonymous"></script>
+    <script src="https://code.jquery.com/ui/1.12.1/jquery-ui.min.js" integrity="sha256-VazP97ZCwtekAsvgPBSUwPFKdrwD3unUfSGVYrahUqU=" crossorigin="anonymous"></script>
+    <link rel="stylesheet" href="https://code.jquery.com/ui/1.12.1/themes/base/jquery-ui.css" crossorigin="anonymous">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/popper.js/1.14.6/umd/popper.min.js" integrity="sha384-wHAiFfRlMFy6i5SRaxvfOCifBUQy1xHdJ/yoi7FRNXMRBu5WHdZYu1hA6ZOblgut" crossorigin="anonymous"></script>
+    <script src="https://stackpath.bootstrapcdn.com/bootstrap/4.2.1/js/bootstrap.min.js" integrity="sha384-B0UglyR+jN6CkvvICOB2joaf5I4l3gm9GU6Hc1og6Ls7i6U/mkkaduKaBhlAXv9k" crossorigin="anonymous"></script>
+    <script src="https://d3js.org/d3.v5.min.js"></script>
+    <script type="text/javascript" src="rl.js"></script>
+    <script>
+        var action_names = ["up", "left", "right", "down"];
+        var cs = 60;  // cell size
+    </script>
+    <script type="text/javascript" src="policy_iteration.js"></script>
+    <script type="text/javascript" src="value_iteration.js"></script>
+    <script type="text/javascript" src="sarsa.js"></script>
+    <script type="text/javascript" src="qlearning.js"></script>
+    <script type="text/javascript" src="jquery.flot.min.js"></script>
+</head>
+<body onload="init_pi();init_vi();init_sarsa();init_qlearning();">
+    <br/>
+    <div class="text-center">
+        <h2 style="font-weight: bold">Dynamic Programming (Policy Iteration, Value Iteration), SARSA, Q-Learning</h2>
+    </div>
+    <div class="text-right">
+        <span style="font-weight: bold">LINK@KoreaTech</span>
+        <br/>
+        <span style="font-weight: bold">Febraury, 14, 2019</span>
+        <br/>
+        <span style="font-weight: bold">Email: <a href="mailto: link.koreatech@gmail.com">link.koreatech at gmail.com</a></span>
+        <br/>
+        <span>This site is made by using the source codes shared from the site, <a href="https://cs.stanford.edu/people/karpathy/reinforcejs/index.html">REINFORCEjs</a>.</span>
+    </div>
+    <br>
+
+    <div style="margin-left: 1em">
+        <div class="row">
+            <div class="col-md-8 text-center">
+                <h2>
+                    Policy Iteration
+                    <button class="btn btn-success" id="pi_toggle" onclick="togglePolicyIteration()">
+                       Start/Pause (Toggle)
+                    </button>
+                    <button class="btn btn-danger" id="pi_stop" onclick="stopPolicyIteration()">
+                       Stop
+                    </button>
+                    <button class="btn btn-info" onclick="resetPolicyIteration()">
+                       Reset
+                    </button>
+                </h2>
+                <div class="text-left">
+                    <ul style="margin-left: 7.0em">
+                        <li>
+                            Sum of All State Values: <span style="font-weight: bold" id="pi_state_values">0</span>
+                        </li>
+                        <li>
+                            Difference of Sum of All State Values: <span style="font-weight: bold" id="pi_diff_state_values">-1</span>
+                        </li>
+                        <li>
+                            Status: <span style="font-weight: bold" id="pi_status">RESET</span>
+                        </li>
+                        <li>
+                            Discount Factor (gamma): 0.75
+                        </li>
+                    </ul>
+                </div>
+                <div class="text-center">
+                    <img src="./images/PI_algo.jpg" width="50%" border="0"/>
+                </div>
+            </div>
+            <div class="col-md-4 text-center">
+                <div class="text-left">
+                    <span style="font-size: small">Iteration: <span id="pi_iter">-1</span></span>
+                </div>
+                <div id="draw_pi" class="text-left"></div>
+            </div>
+        </div>
+    </div>
+
+    <hr/>
+    <hr/>
+
+    <div style="margin-left: 1em">
+        <div class="row">
+            <div class="col-md-8 text-center">
+                <h2>
+                    Value Iteration
+                    <button class="btn btn-success" id="vi_toggle" onclick="toggleValueIteration()">
+                       Start/Pause (Toggle)
+                    </button>
+                    <button class="btn btn-danger" id="vi_stop" onclick="stopValueIteration()">
+                       Stop
+                    </button>
+                    <button class="btn btn-info" onclick="resetValueIteration()">
+                       Reset
+                    </button>
+                </h2>
+                <div class="text-left">
+                    <ul style="margin-left: 7.0em">
+                        <li>
+                            Sum of All State Values: <span style="font-weight: bold" id="vi_state_values">0</span>
+                        </li>
+                        <li>
+                            Difference of Sum of All State Values: <span style="font-weight: bold" id="vi_diff_state_values">-1</span>
+                        </li>
+                        <li>
+                            Status: <span style="font-weight: bold" id="vi_status">RESET</span>
+                        </li>
+                        <li>
+                            Discount Factor (gamma): 0.75
+                        </li>
+                    </ul>
+                </div>
+                <div class="text-center">
+                    <img src="./images/VI_algo.jpg" width="50%" border="0"/>
+                </div>
+            </div>
+            <div class="col-md-4 text-center">
+                <div class="text-left">
+                    <span style="font-size: small">Iteration: <span id="vi_iter">-1</span></span>
+                </div>
+                <div id="draw_vi" class="text-left"></div>
+            </div>
+        </div>
+    </div>
+
+    <hr/>
+    <hr/>
+
+    <div style="margin-left: 1em">
+        <div class="row">
+            <div class="col-md-8 text-center">
+                <h2>
+                    SARSA
+                    <button class="btn btn-success" id="sarsa_toggle" onclick="toggleSarsaIteration()">
+                       Start/Pause (Toggle)
+                    </button>
+                    <button class="btn btn-danger" id="sarsa_stop" onclick="stopSarsaIteration()">
+                       Stop
+                    </button>
+                    <button class="btn btn-info" onclick="resetSarsa()">
+                       Reset
+                    </button>
+                </h2>
+                <div class="row text-left">
+                    <div class="col-md-6">
+                        <ul style="margin-left: 7.0em">
+                            <li>
+                                Sum of all state values: <span style="font-weight: bold" id="sarsa_state_values">-1</span>
+                            </li>
+                            <li>
+                                Total number of steps over all episodes: <span style="font-weight: bold" id="sarsa_total_steps">-1</span>
+                            </li>
+                            <li>
+                                Status: <span style="font-weight: bold" id="sarsa_status">RESET</span>
+                            </li>
+                            <li>
+                                Epsilon: <span style="font-weight: bold" id="sarsa_epsilon">0.2</span>
+                            </li>
+                            <li>
+                                Discount Factor (&gamma;): 0.75
+                            </li>
+                            <li>
+                                Initial epsilon value for &epsilon;-greedy policy (&epsilon;): 0.2
+                            </li>
+                            <li>
+                                Epsilon decay rate (&eta;): 0.02
+                            </li>
+                            <li>
+                                Learning rate (&alpha;): 0.1
+                            </li>
+                        </ul>
+                    </div>
+                    <div class="col-md-6 text-center">
+                        <img src="./images/SARSA_algo.jpg" width="105%" border="0"/>
+                        <br/><br/>
+                    </div>
+                </div>
+                <div class="text-center">
+                    Sum of each step's reward over episodes:
+                    <div class="text-center" id="flotreward_sarsa" style="width:800px; height: 290px; margin: auto;"></div>
+                </div>
+            </div>
+            <div class="col-md-4 text-center">
+                <div class="text-left">
+                    <span style="font-size: small">Episode: <span id="sarsa_episode">0</span></span>
+                </div>
+                <div id="draw_sarsa" class="text-left"></div>
+            </div>
+        </div>
+    </div>
+
+    <hr/>
+    <hr/>
+
+    <div style="margin-left: 1em">
+        <div class="row">
+            <div class="col-md-8 text-center">
+                <h2>
+                    Q-learning
+                    <button class="btn btn-success" id="qlearning_toggle" onclick="toggleQLearningIteration()">
+                       Start/Pause (Toggle)
+                    </button>
+                    <button class="btn btn-danger" id="qlearning_stop" onclick="stopQLearningIteration()">
+                       Stop
+                    </button>
+                    <button class="btn btn-info" onclick="resetQLearning()">
+                       Reset
+                    </button>
+                </h2>
+                <div class="row text-left">
+                    <div class="col-md-6">
+                        <ul style="margin-left: 7.0em">
+                            <li>
+                                Sum of all state values: <span style="font-weight: bold" id="qlearning_state_values">-1</span>
+                            </li>
+                            <li>
+                                Total number of steps over all episodes: <span style="font-weight: bold" id="qlearning_total_steps">-1</span>
+                            </li>
+                            <li>
+                                Status: <span style="font-weight: bold" id="qlearning_status">RESET</span>
+                            </li>
+                            <li>
+                                Epsilon: <span style="font-weight: bold" id="qlearning_epsilon">0.2</span>
+                            </li>
+                            <li>
+                                Discount Factor (&gamma;): 0.75
+                            </li>
+                            <li>
+                                Initial epsilon value for &epsilon;-greedy policy (&epsilon;): 0.2
+                            </li>
+                            <li>
+                                Epsilon decay rate (&eta;): 0.02
+                            </li>
+                            <li>
+                                Learning rate (&alpha;): 0.1
+                            </li>
+                        </ul>
+                    </div>
+                    <div class="col-md-6 text-center">
+                        <img src="./images/QLearning_algo.jpg" width="105%" border="0"/>
+                        <br/><br/>
+                    </div>
+                </div>
+                <div class="text-center">
+                    Sum of each step's reward over episodes:
+                    <div class="text-center" id="flotreward_qlearning" style="width:800px; height: 290px; margin: auto;"></div>
+                </div>
+            </div>
+            <div class="col-md-4 text-center">
+                <div class="text-left">
+                    <span style="font-size: small">Episode: <span id="qlearning_episode">0</span></span>
+                </div>
+                <div id="draw_qlearning" class="text-left"></div>
+            </div>
+        </div>
+    </div>
+</body>
+</html>
