@@ -301,7 +301,9 @@ class A3C:
             pylab.clf()
             pylab.plot(range(len(self.global_score_list)), self.global_score_list, 'b')
             pylab.plot(range(len(self.global_score_list)), self.exp_moving_average(self.global_score_list, 10), 'r')
-            pylab.legend(["Score", "MA_Score"])
+            pylab.legend(["Score", "Averaged Score"])
+            pylab.xlabel("Episodes")
+            pylab.ylabel("Scores")
             pylab.savefig("./save_graph/global_score.png")
 
             with open('./save_graph/global_score.pickle', 'wb') as f:
@@ -314,6 +316,8 @@ class A3C:
             pylab.plot(range(len(self.global_actor_loss_list)), self.global_actor_loss_list, 'b')
             pylab.plot(range(len(self.global_critic_loss_list)), self.global_critic_loss_list, 'r')
             pylab.legend(["Actor Loss", "Critic Loss"])
+            pylab.xlabel("Episodes")
+            pylab.ylabel("Losses")
 
             # global_error = np.asarray(self.global_actor_loss_list) + np.asarray(self.global_critic_loss_list)
             # pylab.plot(range(len(self.global_critic_loss_list)), global_error.tolist(), 'g')
