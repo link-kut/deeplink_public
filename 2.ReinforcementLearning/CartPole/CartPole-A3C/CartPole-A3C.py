@@ -15,6 +15,7 @@ from keras import backend as K
 import os
 import pickle
 
+print(tf.__version__)
 series_size = 1 # MLP에서는 사용하지 않음
 feature_size = 4
 # x : -0.061586
@@ -28,8 +29,8 @@ model = "MLP"
 #model = "LSTM"
 #model = "CNN"
 
-#load_model = False  # 훈련할 때
-load_model = True    # 훈련이 끝나고 Play 할 때
+load_model = False  # 훈련할 때
+#load_model = True    # 훈련이 끝나고 Play 할 때
 
 MAX_EPISODES = 1000
 
@@ -259,12 +260,13 @@ class A3C_LSTM:
 
     def append_global_score_list(self, idx, episode, score, mean_score):
         with self.__global_score_list_lock:
-            self.global_score_list.append(score)
 
             if score >= 195 and self.global_score_list[-1] >= 195:
                 self.num_consecutive_success += 1
             else:
                 self.num_consecutive_success = 0
+
+            self.global_score_list.append(score)
 
             global_logger.info("{0:>5}-Episode {1:>3d}: SCORE {2:.6f}, MEAN SCORE {3:.6f}, num_consecutive_success: {4}".format(
                 idx,
@@ -327,7 +329,7 @@ class Agent(threading.Thread):
     def run(self):
         local_episode = 0
 
-        while local_episode < MAX_EPISODES:
+        while local_episode < MAX_EPISODES and self.running:
             state = self.env.reset()
             self.state_series.append(state.tolist())
 
