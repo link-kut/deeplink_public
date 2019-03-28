@@ -68,14 +68,16 @@ class Worker(threading.Thread):
 
                 state = new_state
 
-                # if local_step % 5 == 0 and self.running:
-                #     actor_loss, critic_loss = self.train_episode()
-                #     self.global_a3c.save_model()
-
-                if done and self.running:
+                if local_step % 5 == 0 and self.running:
                     actor_loss, critic_loss = self.train_episode()
                     self.global_a3c.save_model()
                     self.remove_memory()
+
+                if done and self.running:
+                    if len(self.state_list) > 0:
+                        actor_loss, critic_loss = self.train_episode()
+                        self.global_a3c.save_model()
+                        self.remove_memory()
 
                     local_episode += 1
 
@@ -91,54 +93,6 @@ class Worker(threading.Thread):
 
                     self.global_a3c.append_global_score_list(self.idx, local_episode, local_score, actor_loss, critic_loss)
                     break
-
-    #In Policy Gradient, Q function is not available.
-    #Instead agent uses sample returns for evaluating policy
-    def get_discount_rewards(self):
-        discounted_rewards = np.zeros_like(self.reward_list)
-
-        for t in reversed(range(0, len(self.reward_list))):
-            if self.done_list[t]:
-                running_add = self.reward_list[t]
-            else:
-                if self.model_type == "MLP":
-                    running_add = self.critic.predict(
-                        np.reshape(self.new_state_list[t], (1, self.feature_size))
-                    )[0]
-                elif self.model_type == 'LSTM':
-                    running_add = self.critic.predict(
-                        np.reshape(self.new_state_list[t], (1, self.series_size, self.feature_size))
-                    )[0]
-                else:
-                    running_add = self.critic.predict(
-                        np.reshape(self.new_state_list[t], (1, self.series_size, self.feature_size, 1))
-                    )[0]
-                running_add = self.reward_list[t] + self.discount_factor * running_add
-            discounted_rewards[t] = running_add
-        return discounted_rewards
-
-    # def get_discount_rewards(self):
-    #     discounted_rewards = np.zeros_like(self.reward_list)
-    #
-    #     for t in reversed(range(0, len(self.reward_list))):
-    #         if self.done_list[t]:
-    #             running_add = self.reward_list[t]
-    #         else:
-    #             if self.model_type == "MLP":
-    #                 running_add_2 = self.critic.predict(
-    #                     np.reshape(self.new_state_list[t], (1, self.feature_size))
-    #                 )[0]
-    #             elif self.model_type == 'LSTM':
-    #                 running_add_2 = self.critic.predict(
-    #                     np.reshape(self.new_state_list[t], (1, self.series_size, self.feature_size))
-    #                 )[0]
-    #             else:
-    #                 running_add_2 = self.critic.predict(
-    #                     np.reshape(self.new_state_list[t], (1, self.series_size, self.feature_size, 1))
-    #                 )[0]
-    #             running_add = self.reward_list[t] + self.discount_factor * running_add_2
-    #         discounted_rewards[t] = running_add
-    #     return discounted_rewards
 
     def append_memory(self, state, action, reward, new_state, done):
         self.state_series.append(state.tolist())
@@ -164,53 +118,74 @@ class Worker(threading.Thread):
 
     # update policy network and value network every episode
     def train_episode(self):
-        discounted_rewards = self.get_discount_rewards()
+        discount_rewards = []
 
         if self.model_type == "MLP":
-            values = self.critic.predict(
-                np.reshape(self.state_list, (len(self.state_list), self.feature_size))
-            )
-        elif self.model_type == "LSTM":
-            values = self.critic.predict(
-                np.reshape(self.state_list, (len(self.state_list), self.series_size, self.feature_size))
-            )
+            if self.done_list[-1]:
+                reward = 0
+            else:
+                reward = self.critic.predict(
+                    np.reshape(self.new_state_list[-1], (1, self.feature_size))
+                )[0]
+        elif self.model_type == 'LSTM':
+            if self.done_list[-1]:
+                reward = 0
+            else:
+                reward = self.critic.predict(
+                    np.reshape(self.new_state_list[-1], (1, self.series_size, self.feature_size))
+                )[0]
         else:
-            values = self.critic.predict(
-                np.reshape(self.state_list, (len(self.state_list), self.series_size, self.feature_size, 1))
-            )
-        values = np.reshape(values, len(values))  # values.shape --> (65,) when len(self.state_list) == 65
+            if self.done_list[-1]:
+                reward = 0
+            else:
+                reward = self.critic.predict(
+                    np.reshape(self.new_state_list[-1], (1, self.series_size, self.feature_size, 1))
+                )[0]
 
-        advantages = discounted_rewards - values
-        advantages_clipped = np.clip(advantages, -5.0, 5.0)
+        for t in reversed(range(0, len(self.reward_list))):
+            reward = self.reward_list[t] + self.discount_factor * reward
+            discount_rewards.append(reward)
+
+        discount_rewards.reverse()
 
         if self.model_type == "MLP":
             local_input = np.reshape(self.state_list, (len(self.state_list), self.feature_size))
-        elif self.model_type == "LSTM":
+            value = self.critic.predict(local_input)[0]
+        elif self.model_type == 'LSTM':
             local_input = np.reshape(self.state_list, (len(self.state_list), self.series_size, self.feature_size))
+            value = self.critic.predict(local_input)[0]
         else:
             local_input = np.reshape(self.state_list, (len(self.state_list), self.series_size, self.feature_size, 1))
+            value = self.critic.predict(local_input)[0]
 
-        actor_loss, loss, policy, action_prob, weights = self.optimizer[0]([
+        advantage = (np.array(discount_rewards) - value).tolist()
+
+        actor_loss, policy, weights = self.optimizer[0]([
             local_input,
             np.reshape(self.action_list, (len(self.action_list), self.action_size)),
-            advantages
+            advantage
         ])
 
         critic_loss, value, weights_0, weights_1, weights_2, weights_3 = self.optimizer[1]([
             local_input,
-            discounted_rewards
+            discount_rewards
         ])
 
-        if not np.array_equal(advantages, advantages_clipped):
-            self.local_logger.info("{0}: Advantage: Original: {1} - Clipped: {2}".format(self.idx, advantages, advantages_clipped))
-            # self.local_logger.info("actor_loss:{0}\nloss:{1}\npolicy:{2}\naction_prob:{3}\nl2_norm:{4}".format(
-            #     actor_loss, loss, policy, action_prob, l2_norm
-            # ))
-            # self.local_logger.info("value:{0}\ncritic_loss:{1}\nl2_norm_0:{2}\nl2_norm_1:{3}\nl2_norm_2:{4}\nl2_norm_3".format(
-            #     value, critic_loss, l2_norm_0, l2_norm_1, l2_norm_2, l2_norm_3
-            # ))
+        mean_actor_loss = np.mean(actor_loss)
+        mean_critic_loss = np.mean(critic_loss)
 
-        return actor_loss, critic_loss
+        return mean_actor_loss, mean_critic_loss
+        #
+        # if not np.array_equal(advantages, advantages_clipped):
+        #     self.local_logger.info("{0}: Advantage: Original: {1} - Clipped: {2}".format(self.idx, advantages, advantages_clipped))
+        #     # self.local_logger.info("actor_loss:{0}\nloss:{1}\npolicy:{2}\naction_prob:{3}\nl2_norm:{4}".format(
+        #     #     actor_loss, loss, policy, action_prob, l2_norm
+        #     # ))
+        #     # self.local_logger.info("value:{0}\ncritic_loss:{1}\nl2_norm_0:{2}\nl2_norm_1:{3}\nl2_norm_2:{4}\nl2_norm_3".format(
+        #     #     value, critic_loss, l2_norm_0, l2_norm_1, l2_norm_2, l2_norm_3
+        #     # ))
+        #
+        # return actor_loss, critic_loss
 
     def get_action(self, state):
         state = np.asarray(state)
@@ -221,7 +196,13 @@ class Worker(threading.Thread):
         else:
             state = np.reshape(state, (1, self.series_size, self.feature_size, 1))
 
-        policy = self.actor.predict(state)[0]
+        logits = self.actor.predict(state)[0]
+        policy = self.softmax(logits)
         action = np.random.choice(self.action_size, 1, p=policy)[0]
 
         return policy, np.argmax(policy), action
+
+    @staticmethod
+    def softmax(x):
+        e_x = np.exp(x - np.max(x))
+        return e_x / e_x.sum(axis=0)

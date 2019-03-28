@@ -182,7 +182,7 @@ class WorkerForFullSteps(threading.Thread):
             local_input = np.reshape(self.state_list, (len(self.state_list), self.series_size, self.feature_size, 1))
             value = self.critic.predict(local_input)[0]
 
-        advantage = discount_rewards - value
+        advantage = (np.array(discount_rewards) - value).tolist()
 
         actor_loss, policy, weights = self.optimizer[0]([
             local_input,

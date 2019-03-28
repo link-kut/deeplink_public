@@ -14,7 +14,7 @@ from keras import backend as K
 import os
 import pickle
 from A3C_worker import Worker
-from A3C_worker_full_steps import WorkerForFullSteps
+# from A3C_worker_full_steps import WorkerForFullSteps
 
 print(tf.__version__)
 series_size = 1 # MLP에서는 사용하지 않음
@@ -193,7 +193,7 @@ class A3C:
 
     def train(self):
         workers = [
-            WorkerForFullSteps(idx, self, self.actor, self.critic, self.optimizer, self.discount_factor,
+            Worker(idx, self, self.actor, self.critic, self.optimizer, self.discount_factor,
                   self.sess, series_size, feature_size, action_size, MAX_EPISODES, model_type) for idx in range(4)
         ]
 
