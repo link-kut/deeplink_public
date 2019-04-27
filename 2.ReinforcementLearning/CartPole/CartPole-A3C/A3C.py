@@ -14,10 +14,12 @@ from keras import backend as K
 import os
 import pickle
 from A3C_worker import Worker
+# from A3C_worker_full_steps import WorkerForFullSteps
 
 print(tf.__version__)
-series_size = 1 # MLP에서는 사용하지 않음
+series_size = 2
 feature_size = 4
+
 # x : -0.061586
 # θ : -0.75893141
 # dx/dt : 0.05793238
@@ -27,14 +29,14 @@ action_size = 2
 
 model_type = "MLP"
 #model_type = "LSTM"
-#model_type = "CNN"
+# model_type = "CNN"
 
 load_model = False  # 훈련할 때
 #load_model = True    # 훈련이 끝나고 Play 할 때
 
 MAX_EPISODES = 1000
 
-SUCCESS_CONSECUTIVE_THRESHOLD = 15
+SUCCESS_CONSECUTIVE_THRESHOLD = 50
 
 global_logger = get_logger("./cartpole_a3c")
 
@@ -48,7 +50,7 @@ class A3C:
         self.epsilon = 10 ** (-8)
 
         self.discount_factor = .99
-        self.hidden1, self.hidden2, self.hidden3 = 64, 32, 16
+        self.hidden1, self.hidden2, self.hidden3 = 100, 100, 16
 
         self.global_score_list = []
         self.global_actor_loss_list = []
@@ -79,7 +81,7 @@ class A3C:
 
     def build_model(self):
         if model_type == "MLP":
-            input = Input(batch_shape=(None, feature_size), name="state")
+            input = Input(batch_shape=(None, series_size * feature_size), name="state")
             shared_1 = Dense(units=self.hidden1, activation='relu')(input)
             shared_2 = Dense(units=self.hidden2, activation="relu")(shared_1)
         elif model_type == "LSTM":
@@ -116,15 +118,12 @@ class A3C:
             shared_2 = Flatten()(shared_2)
 
         actor_hidden = Dense(self.hidden3, activation='relu', kernel_initializer='glorot_normal')(shared_2)
-        actor_hidden_2 = Dropout(rate=0.35)(actor_hidden)
-        action_prob = Dense(action_size, activation='softmax', kernel_initializer='glorot_normal')(
-            actor_hidden_2)
+        action_logit = Dense(action_size, activation='linear', kernel_initializer='glorot_normal')(actor_hidden)
 
         value_hidden = Dense(self.hidden3, activation='relu', kernel_initializer='glorot_normal')(shared_2)
-        value_hidden_2 = Dropout(rate=0.35)(value_hidden)
-        state_value = Dense(1, activation='linear', kernel_initializer='glorot_normal')(value_hidden_2)
+        state_value = Dense(1, kernel_initializer='glorot_normal')(value_hidden)
 
-        actor = Model(inputs=input, outputs=action_prob)
+        actor = Model(inputs=input, outputs=action_logit)
         critic = Model(inputs=input, outputs=state_value)
 
         actor._make_predict_function()
@@ -138,15 +137,16 @@ class A3C:
     def actor_optimizer(self):
         action = K.placeholder(shape=(None, action_size), name="action")
         advantages = K.placeholder(shape=(None,), name="advantages")
-        policy = self.actor.output
-        action_prob = K.sum(action * policy, axis=1)
-        eligibility = K.log(action_prob + 1e-10) * K.stop_gradient(advantages)
-        loss = -K.sum(eligibility)
+        logits = self.actor.output
+        policy = K.softmax(logits)
 
-        # policy의 entropy를 더하여 Exploration 행동 확률 추가.
-        entropy = K.sum(policy * K.log(policy + 1e-10))
+        entropy = tf.nn.softmax_cross_entropy_with_logits_v2(labels=policy, logits=logits)
+        # policy_loss = tf.nn.softmax_cross_entropy_with_logits_v2(labels=action, logits=logits)
+        policy_loss = tf.nn.sparse_softmax_cross_entropy_with_logits(labels=tf.math.argmax(action, axis=1), logits=logits)
 
-        actor_loss = loss + 0.01 * entropy
+        policy_loss *= tf.stop_gradient(advantages)
+        actor_loss = policy_loss - 0.01 * entropy
+        # actor_loss = policy_loss
 
         optimizer = Adam(lr=self.actor_lr, beta_1=self.beta_1, beta_2=self.beta_2, epsilon=self.epsilon)
         with self.__global_score_list_lock:
@@ -156,17 +156,17 @@ class A3C:
 
         train = K.function(
             [self.actor.input, action, advantages],
-            [actor_loss, loss, policy, action_prob, weights],
+            [actor_loss, policy, weights],
             updates=updates
         )
 
         global_logger.info("action: {0}".format(action))
         global_logger.info("advantages: {0}".format(advantages))
+        global_logger.info("logits: {0}".format(logits))
         global_logger.info("policy: {0}".format(policy))
-        global_logger.info("action_prob: {0}".format(action_prob))
-        global_logger.info("eligibility: {0}".format(eligibility))
-        global_logger.info("loss: {0}".format(loss))
         global_logger.info("entropy: {0}".format(entropy))
+        global_logger.info("policy_loss: {0}".format(policy_loss))
+        global_logger.info("actor_loss: {0}".format(actor_loss))
         global_logger.info("self.actor.trainable_weights: {0}".format(self.actor.trainable_weights))
 
         return train
@@ -175,7 +175,8 @@ class A3C:
     def critic_optimizer(self):
         discounted_reward = K.placeholder(shape=(None,), name="discounted_reward")
         value = self.critic.output
-        critic_loss = K.mean(K.square(discounted_reward - value))
+        critic_loss = K.square(discounted_reward - value)
+
         optimizer = Adam(lr=self.critic_lr, beta_1=self.beta_1, beta_2=self.beta_2, epsilon=self.epsilon)
         with self.__global_score_list_lock:
             updates = optimizer.get_updates(self.critic.trainable_weights, [], critic_loss)
@@ -223,6 +224,7 @@ class A3C:
             time.sleep(1)
 
     def play(self):
+        # env = gym.make("CartPole-v0").unwrapped
         env = gym.make("CartPole-v0")
         state = env.reset()
 
@@ -248,7 +250,7 @@ class A3C:
 
     def get_action(self, state):
         if model_type == "MLP":
-            policy = self.actor.predict(np.reshape(state, [1, feature_size]))[0]
+            policy = self.actor.predict(np.reshape(state, [1, series_size * feature_size]))[0]
         elif model_type == "LSTM":
             policy = self.actor.predict(np.reshape(state, [1, series_size, feature_size]))[0]
         else:
@@ -315,6 +317,7 @@ class A3C:
             pylab.clf()
             pylab.plot(range(len(self.global_actor_loss_list)), self.global_actor_loss_list, 'b')
             pylab.plot(range(len(self.global_critic_loss_list)), self.global_critic_loss_list, 'r')
+            pylab.yscale('log')
             pylab.legend(["Actor Loss", "Critic Loss"])
             pylab.xlabel("Episodes")
             pylab.ylabel("Losses")

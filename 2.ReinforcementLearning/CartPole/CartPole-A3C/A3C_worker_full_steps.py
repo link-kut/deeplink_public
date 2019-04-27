@@ -5,7 +5,7 @@ import gym
 import numpy as np
 
 
-class Worker(threading.Thread):
+class WorkerForFullSteps(threading.Thread):
     def __init__(self, idx, global_a3c, actor, critic, optimizer, discount_factor, sess, series_size, feature_size, action_size, max_episodes, model_type):
         threading.Thread.__init__(self)
 
@@ -27,6 +27,7 @@ class Worker(threading.Thread):
         self.local_score_list = []
         self.local_logger = get_logger("./cartpole_a3c_" + str(self.idx))
         self.env = gym.make('CartPole-v0')
+        # self.env = gym.make('CartPole-v0').unwrapped
 
         self.series_size = series_size
         self.feature_size = feature_size
@@ -57,13 +58,9 @@ class Worker(threading.Thread):
                 policy, argmax, action = self.get_action(self.state_series)
                 new_state, reward, done, info = self.env.step(action)
 
-                # self.local_logger.info("{0} - policy: {1}|{2}, Action: {3} --> State: {3}, Reward: {4}, Done: {5}, Info: {6}".format(
-                #     self.idx, policy, argmax, action, new_state, reward, done, info
-                # ))
-
-                # print("{0} - policy: {1}|{2}, Action: {3} --> State: {3}, Reward: {4}, Done: {5}, Info: {6}".format(
-                #     self.idx, policy, argmax, action, new_state, reward, done, info
-                # ))
+                self.local_logger.info("{0} - policy: {1}|{2}, Action: {3} --> State: {3}, Reward: {4}, Done: {5}, Info: {6}".format(
+                    self.idx, policy, argmax, action, new_state, reward, done, info
+                ))
 
                 local_score += reward
                 local_step += 1
@@ -75,7 +72,6 @@ class Worker(threading.Thread):
                 # if local_step % 5 == 0 and self.running:
                 #     actor_loss, critic_loss = self.train_episode()
                 #     self.global_a3c.save_model()
-                #     self.remove_memory()
 
                 if done and self.running:
                     actor_loss, critic_loss = self.train_episode()
@@ -96,6 +92,31 @@ class Worker(threading.Thread):
 
                     self.global_a3c.append_global_score_list(self.idx, local_episode, local_score, actor_loss, critic_loss)
                     break
+
+    #In Policy Gradient, Q function is not available.
+    #Instead agent uses sample returns for evaluating policy
+    def get_discount_rewards(self):
+        discounted_rewards = np.zeros_like(self.reward_list)
+
+        for t in reversed(range(0, len(self.reward_list))):
+            if self.done_list[t]:
+                running_add = self.reward_list[t]
+            else:
+                if self.model_type == "MLP":
+                    running_add = self.critic.predict(
+                        np.reshape(self.new_state_list[t], (1, self.feature_size))
+                    )[0]
+                elif self.model_type == 'LSTM':
+                    running_add = self.critic.predict(
+                        np.reshape(self.new_state_list[t], (1, self.series_size, self.feature_size))
+                    )[0]
+                else:
+                    running_add = self.critic.predict(
+                        np.reshape(self.new_state_list[t], (1, self.series_size, self.feature_size, 1))
+                    )[0]
+                running_add = self.reward_list[t] + self.discount_factor * running_add
+            discounted_rewards[t] = running_add
+        return discounted_rewards
 
     def append_memory(self, state, action, reward, new_state, done):
         self.state_series.append(state.tolist())
@@ -128,7 +149,7 @@ class Worker(threading.Thread):
                 reward = 0
             else:
                 reward = self.critic.predict(
-                    np.reshape(self.new_state_list[-1], (1, self.series_size * self.feature_size))
+                    np.reshape(self.new_state_list[-1], (1, self.feature_size))
                 )[0]
         elif self.model_type == 'LSTM':
             if self.done_list[-1]:
@@ -152,14 +173,14 @@ class Worker(threading.Thread):
         discount_rewards.reverse()
 
         if self.model_type == "MLP":
-            local_input = np.reshape(self.state_list, (len(self.state_list), self.series_size * self.feature_size))
-            value = self.critic.predict(local_input)
+            local_input = np.reshape(self.state_list, (len(self.state_list), self.feature_size))
+            value = self.critic.predict(local_input)[0]
         elif self.model_type == 'LSTM':
             local_input = np.reshape(self.state_list, (len(self.state_list), self.series_size, self.feature_size))
-            value = self.critic.predict(local_input)
+            value = self.critic.predict(local_input)[0]
         else:
             local_input = np.reshape(self.state_list, (len(self.state_list), self.series_size, self.feature_size, 1))
-            value = self.critic.predict(local_input)
+            value = self.critic.predict(local_input)[0]
 
         advantage = (np.array(discount_rewards) - value).tolist()
 
@@ -178,22 +199,11 @@ class Worker(threading.Thread):
         mean_critic_loss = np.mean(critic_loss)
 
         return mean_actor_loss, mean_critic_loss
-        #
-        # if not np.array_equal(advantages, advantages_clipped):
-        #     self.local_logger.info("{0}: Advantage: Original: {1} - Clipped: {2}".format(self.idx, advantages, advantages_clipped))
-        #     # self.local_logger.info("actor_loss:{0}\nloss:{1}\npolicy:{2}\naction_prob:{3}\nl2_norm:{4}".format(
-        #     #     actor_loss, loss, policy, action_prob, l2_norm
-        #     # ))
-        #     # self.local_logger.info("value:{0}\ncritic_loss:{1}\nl2_norm_0:{2}\nl2_norm_1:{3}\nl2_norm_2:{4}\nl2_norm_3".format(
-        #     #     value, critic_loss, l2_norm_0, l2_norm_1, l2_norm_2, l2_norm_3
-        #     # ))
-        #
-        # return actor_loss, critic_loss
 
     def get_action(self, state):
         state = np.asarray(state)
         if self.model_type == "MLP":
-            state = np.reshape(state, (1, self.series_size * self.feature_size))
+            state = np.reshape(state, (1, self.feature_size))
         elif self.model_type == "LSTM":
             state = np.reshape(state, (1, self.series_size, self.feature_size))
         else:

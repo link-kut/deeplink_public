@@ -22,6 +22,7 @@ class ActorCriticModel(keras.Model):
         self.action_size = action_size
         self.dense1 = layers.Dense(100, activation='relu')
         self.policy_logits = layers.Dense(action_size)
+
         self.dense2 = layers.Dense(100, activation='relu')
         self.values = layers.Dense(1)
 
@@ -80,14 +81,10 @@ class MasterAgent():
 
         self.lr = 0.001
 
-        self.beta_1 = 0.9
-        self.beta_2 = 0.999
-        self.epsilon = 1e-8
-
         env = gym.make(self.game_name)
         self.state_size = env.observation_space.shape[0]
         self.action_size = env.action_space.n
-        self.opt = tf.train.AdamOptimizer(self.lr, beta_1=self.beta_1, beta_2=self.beta_2, epsilon=self.epsilon, use_locking=True)
+        self.opt = tf.train.AdamOptimizer(self.lr, use_locking=True)
         print(self.state_size, self.action_size)
 
         self.global_model = ActorCriticModel(self.state_size, self.action_size)  # global network
@@ -98,7 +95,7 @@ class MasterAgent():
 
         workers = [
             Worker(self.state_size, self.action_size, self.global_model, self.opt, res_queue, i, game_name=self.game_name,
-                    save_dir=self.save_dir) for i in range(multiprocessing.cpu_count())
+                    save_dir=self.save_dir) for i in range(4)
         ]
 
         for i, worker in enumerate(workers):
@@ -220,7 +217,7 @@ class Worker(threading.Thread):
                 ep_reward += reward
                 mem.store(current_state, action, reward)
 
-                if time_count == 20 or done:
+                if done:
                     # Calculate gradient wrt to local model. We do so by tracking the
                     # variables involved in computing the loss by using tf.GradientTape
                     with tf.GradientTape() as tape:
