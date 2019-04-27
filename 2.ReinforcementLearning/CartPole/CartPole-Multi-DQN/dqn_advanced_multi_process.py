@@ -26,6 +26,11 @@ import matplotlib.pyplot as plt
 import os
 import pickle
 
+import warnings
+warnings.filterwarnings("ignore")
+
+tf.logging.set_verbosity(tf.logging.ERROR)
+
 ddqn = True
 num_hidden_layers = 3
 num_weight_transfer_hidden_layers = 1
