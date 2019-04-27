@@ -97,8 +97,18 @@ def update_from_memory(mainDQN, targetDQN, batch_size):
         i += 1
 
     # DQN 알고리즘으로 학습
-    loss_value, _ = mainDQN.session.run([mainDQN.loss, mainDQN.optimizer],
-                                     feed_dict={mainDQN.X: state_batch, mainDQN.Y: y_batch, mainDQN.action: action_batch})
+    loss_value, _ = mainDQN.session.run(
+        [
+            mainDQN.loss,
+            mainDQN.optimizer
+        ],
+        feed_dict={
+            mainDQN.X: state_batch,
+            mainDQN.Y: y_batch,
+            mainDQN.action: action_batch
+        }
+    )
+
     return loss_value
 
 def bot_play(DQN, env):
