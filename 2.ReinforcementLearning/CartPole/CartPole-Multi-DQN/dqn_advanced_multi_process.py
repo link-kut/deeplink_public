@@ -35,7 +35,7 @@ ddqn = True
 num_hidden_layers = 3
 num_weight_transfer_hidden_layers = 1
 num_workers = 4
-transfer = True
+transfer = False
 verbose = False
 
 
@@ -401,7 +401,7 @@ class DQNAgent:
     def send_solve_info(self, socket, last_episode):
         solve_msg = {
             "type": "solved",
-            "episode": last_episode
+            "last_episode": last_episode
         }
         solve_msg = pickle.dumps(solve_msg, protocol=-1)
         solve_msg = zlib.compress(solve_msg)
@@ -545,7 +545,11 @@ def server_func(multi_dqn):
                 episode_ack_msg = zlib.compress(episode_ack_msg)
                 sockets[worker_idx].send(episode_ack_msg)
             elif episode_msg["type"] == "solved":
-                msg = "SOLVED!!!"
+                msg = "SOLVED!!! - Last Episode: {0} by {1} {2}".format(
+                    episode_msg["last_episode"],
+                    "DDQN" if ddqn else "DQN",
+                    "with Transfer" if transfer else "Without Transfer"
+                )
                 multi_dqn.log_info(msg)
                 if verbose: print(msg)
 
