@@ -61,6 +61,10 @@ class Worker(threading.Thread):
                 #     self.idx, policy, argmax, action, new_state, reward, done, info
                 # ))
 
+                # print("{0} - policy: {1}|{2}, Action: {3} --> State: {3}, Reward: {4}, Done: {5}, Info: {6}".format(
+                #     self.idx, policy, argmax, action, new_state, reward, done, info
+                # ))
+
                 local_score += reward
                 local_step += 1
 
@@ -68,16 +72,15 @@ class Worker(threading.Thread):
 
                 state = new_state
 
-                if local_step % 5 == 0 and self.running:
+                # if local_step % 5 == 0 and self.running:
+                #     actor_loss, critic_loss = self.train_episode()
+                #     self.global_a3c.save_model()
+                #     self.remove_memory()
+
+                if done and self.running:
                     actor_loss, critic_loss = self.train_episode()
                     self.global_a3c.save_model()
                     self.remove_memory()
-
-                if done and self.running:
-                    if len(self.state_list) > 0:
-                        actor_loss, critic_loss = self.train_episode()
-                        self.global_a3c.save_model()
-                        self.remove_memory()
 
                     local_episode += 1
 
@@ -125,7 +128,7 @@ class Worker(threading.Thread):
                 reward = 0
             else:
                 reward = self.critic.predict(
-                    np.reshape(self.new_state_list[-1], (1, self.feature_size))
+                    np.reshape(self.new_state_list[-1], (1, self.series_size * self.feature_size))
                 )[0]
         elif self.model_type == 'LSTM':
             if self.done_list[-1]:
@@ -149,14 +152,14 @@ class Worker(threading.Thread):
         discount_rewards.reverse()
 
         if self.model_type == "MLP":
-            local_input = np.reshape(self.state_list, (len(self.state_list), self.feature_size))
-            value = self.critic.predict(local_input)[0]
+            local_input = np.reshape(self.state_list, (len(self.state_list), self.series_size * self.feature_size))
+            value = self.critic.predict(local_input)
         elif self.model_type == 'LSTM':
             local_input = np.reshape(self.state_list, (len(self.state_list), self.series_size, self.feature_size))
-            value = self.critic.predict(local_input)[0]
+            value = self.critic.predict(local_input)
         else:
             local_input = np.reshape(self.state_list, (len(self.state_list), self.series_size, self.feature_size, 1))
-            value = self.critic.predict(local_input)[0]
+            value = self.critic.predict(local_input)
 
         advantage = (np.array(discount_rewards) - value).tolist()
 
@@ -190,7 +193,7 @@ class Worker(threading.Thread):
     def get_action(self, state):
         state = np.asarray(state)
         if self.model_type == "MLP":
-            state = np.reshape(state, (1, self.feature_size))
+            state = np.reshape(state, (1, self.series_size * self.feature_size))
         elif self.model_type == "LSTM":
             state = np.reshape(state, (1, self.series_size, self.feature_size))
         else:

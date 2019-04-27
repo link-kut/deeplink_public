@@ -17,8 +17,9 @@ from A3C_worker import Worker
 # from A3C_worker_full_steps import WorkerForFullSteps
 
 print(tf.__version__)
-series_size = 1 # MLP에서는 사용하지 않음
+series_size = 2
 feature_size = 4
+
 # x : -0.061586
 # θ : -0.75893141
 # dx/dt : 0.05793238
@@ -35,7 +36,7 @@ load_model = False  # 훈련할 때
 
 MAX_EPISODES = 1000
 
-SUCCESS_CONSECUTIVE_THRESHOLD = 15
+SUCCESS_CONSECUTIVE_THRESHOLD = 50
 
 global_logger = get_logger("./cartpole_a3c")
 
@@ -80,7 +81,7 @@ class A3C:
 
     def build_model(self):
         if model_type == "MLP":
-            input = Input(batch_shape=(None, feature_size), name="state")
+            input = Input(batch_shape=(None, series_size * feature_size), name="state")
             shared_1 = Dense(units=self.hidden1, activation='relu')(input)
             shared_2 = Dense(units=self.hidden2, activation="relu")(shared_1)
         elif model_type == "LSTM":
@@ -137,12 +138,15 @@ class A3C:
         action = K.placeholder(shape=(None, action_size), name="action")
         advantages = K.placeholder(shape=(None,), name="advantages")
         logits = self.actor.output
-        policy = tf.nn.softmax(logits)
+        policy = K.softmax(logits)
+
         entropy = tf.nn.softmax_cross_entropy_with_logits_v2(labels=policy, logits=logits)
+        # policy_loss = tf.nn.softmax_cross_entropy_with_logits_v2(labels=action, logits=logits)
         policy_loss = tf.nn.sparse_softmax_cross_entropy_with_logits(labels=tf.math.argmax(action, axis=1), logits=logits)
 
         policy_loss *= tf.stop_gradient(advantages)
         actor_loss = policy_loss - 0.01 * entropy
+        # actor_loss = policy_loss
 
         optimizer = Adam(lr=self.actor_lr, beta_1=self.beta_1, beta_2=self.beta_2, epsilon=self.epsilon)
         with self.__global_score_list_lock:
@@ -158,8 +162,11 @@ class A3C:
 
         global_logger.info("action: {0}".format(action))
         global_logger.info("advantages: {0}".format(advantages))
+        global_logger.info("logits: {0}".format(logits))
         global_logger.info("policy: {0}".format(policy))
         global_logger.info("entropy: {0}".format(entropy))
+        global_logger.info("policy_loss: {0}".format(policy_loss))
+        global_logger.info("actor_loss: {0}".format(actor_loss))
         global_logger.info("self.actor.trainable_weights: {0}".format(self.actor.trainable_weights))
 
         return train
@@ -243,7 +250,7 @@ class A3C:
 
     def get_action(self, state):
         if model_type == "MLP":
-            policy = self.actor.predict(np.reshape(state, [1, feature_size]))[0]
+            policy = self.actor.predict(np.reshape(state, [1, series_size * feature_size]))[0]
         elif model_type == "LSTM":
             policy = self.actor.predict(np.reshape(state, [1, series_size, feature_size]))[0]
         else:
