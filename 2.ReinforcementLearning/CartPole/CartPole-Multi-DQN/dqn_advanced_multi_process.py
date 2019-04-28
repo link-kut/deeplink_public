@@ -118,7 +118,7 @@ class DQNAgent:
         x = Dense(256, activation='relu', name="hidden_layer_2_" + str(self.worker_idx))(x)
         x = Dense(n_outputs, activation='linear', name='output_layer_' + str(self.worker_idx))(x)
         model = Model(inputs, x)
-        model.summary()
+        #model.summary()
         return model
 
     # save Q Network params to a file
