@@ -35,7 +35,7 @@ ddqn = True
 num_hidden_layers = 3
 num_weight_transfer_hidden_layers = 1
 num_workers = 4
-transfer = True
+transfer = False
 verbose = False
 
 
@@ -97,9 +97,12 @@ class DQNAgent:
         self.replay_counter = 0
 
         if ddqn:
-            print("----------Worker {0}: Double DQN--------".format(self.worker_idx))
+            print("----------Worker {0}-{1}: Double DQN--------".format(
+                self.worker_idx,
+                "With "
+            ))
         else:
-            print("-------------Worker {0}: DQN------------".format(self.worker_idx))
+            print("-------------Worker {0}-{1}: DQN------------".format(self.worker_idx))
 
         self.logger = get_logger("cartpole_worker_" + str(self.worker_idx))
 
