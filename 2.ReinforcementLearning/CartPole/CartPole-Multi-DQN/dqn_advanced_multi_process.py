@@ -35,7 +35,7 @@ ddqn = True
 num_hidden_layers = 3
 num_weight_transfer_hidden_layers = 1
 num_workers = 4
-transfer = False
+transfer = True
 verbose = False
 
 
