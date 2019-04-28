@@ -33,7 +33,7 @@ ddqn = True
 num_hidden_layers = 3
 num_weight_transfer_hidden_layers = 1
 num_workers = 4
-transfer = True
+transfer = False
 verbose = False
 
 
@@ -482,7 +482,7 @@ def server_func(multi_dqn):
 
     for worker_idx in range(num_workers):
         sockets[worker_idx] = context.socket(zmq.REP)
-        sockets[worker_idx].bind('tcp://127.0.0.1:' + str(5000 + worker_idx))
+        sockets[worker_idx].bind('tcp://127.0.0.1:' + str(10000 + worker_idx))
 
     max_mean_score_notification_per_workers = 0
     solved_notification_per_workers = 0
