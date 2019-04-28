@@ -339,12 +339,23 @@ class DQNAgent:
         if transfer:
             if send_weights:
                 weights = {}
-                for layer_id in range(num_weight_transfer_hidden_layers):
-                    layer_name = "hidden_layer_{0}_{1}".format(
-                        layer_id,
-                        worker_idx
-                    )
-                    weights[layer_id] = self.q_model.get_layer(name=layer_name).get_weights()
+                if num_weight_transfer_hidden_layers > num_hidden_layers:
+                    layer_id = 0
+                    for layer_id in range(num_hidden_layers):
+                        layer_name = "hidden_layer_{0}_{1}".format(
+                            layer_id,
+                            self.worker_idx
+                        )
+                        weights[layer_id] = self.q_model.get_layer(name=layer_name).get_weights()
+
+                    weights[layer_id + 1] = self.q_model.get_layer(name="output_layer_{0}".format(self.worker_idx)).get_weights()
+                else:
+                    for layer_id in range(num_weight_transfer_hidden_layers):
+                        layer_name = "hidden_layer_{0}_{1}".format(
+                            layer_id,
+                            self.worker_idx
+                        )
+                        weights[layer_id] = self.q_model.get_layer(name=layer_name).get_weights()
             else:
                 weights = {}
 
@@ -381,12 +392,24 @@ class DQNAgent:
                 if len(best_weights) > 0 and not send_weights:
                     self.global_max_mean_score = global_max_mean_score
 
-                    for layer_id in range(num_weight_transfer_hidden_layers):
-                        layer_name = "hidden_layer_{0}_{1}".format(
-                            layer_id,
-                            worker_idx
+                    if num_weight_transfer_hidden_layers > num_hidden_layers:
+                        layer_id = 0
+                        for layer_id in range(num_hidden_layers):
+                            layer_name = "hidden_layer_{0}_{1}".format(
+                                layer_id,
+                                self.worker_idx
+                            )
+                            self.q_model.get_layer(name=layer_name).set_weights(best_weights[layer_id])
+                        self.q_model.get_layer(name="output_layer_{0}".format(self.worker_idx)).set_weights(
+                            best_weights[layer_id + 1]
                         )
-                        self.q_model.get_layer(name=layer_name).set_weights(best_weights[layer_id])
+                    else:
+                        for layer_id in range(num_weight_transfer_hidden_layers):
+                            layer_name = "hidden_layer_{0}_{1}".format(
+                                layer_id,
+                                self.worker_idx
+                            )
+                            self.q_model.get_layer(name=layer_name).set_weights(best_weights[layer_id])
 
                     msg = ">>> Worker {0}: Set New Best Weights to Local Model!!! - global_max_score: {1}".format(
                         self.worker_idx,
