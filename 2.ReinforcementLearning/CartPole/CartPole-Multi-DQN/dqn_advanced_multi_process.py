@@ -33,9 +33,9 @@ tf.logging.set_verbosity(tf.logging.ERROR)
 
 ddqn = True
 num_hidden_layers = 3
-num_weight_transfer_hidden_layers = 1
+num_weight_transfer_hidden_layers = 3
 num_workers = 4
-transfer = False
+transfer = True
 verbose = False
 
 
@@ -99,10 +99,13 @@ class DQNAgent:
         if ddqn:
             print("----------Worker {0}-{1}: Double DQN--------".format(
                 self.worker_idx,
-                "With "
+                "With Transfer" if transfer else "Without Transfer",
             ))
         else:
-            print("-------------Worker {0}-{1}: DQN------------".format(self.worker_idx))
+            print("-------------Worker {0}-{1}: DQN------------".format(
+                self.worker_idx,
+                "With Transfer" if transfer else "Without Transfer",
+            ))
 
         self.logger = get_logger("cartpole_worker_" + str(self.worker_idx))
 
