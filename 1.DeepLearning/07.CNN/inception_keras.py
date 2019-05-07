@@ -1,23 +1,26 @@
 # Source: https://www.analyticsvidhya.com/blog/2018/10/understanding-inception-network-from-scratch/
 
-import keras
-from keras.models import Model
-from keras.layers import Conv2D, MaxPool2D,  \
+import tensorflow as tf
+print(tf.__version__)
+
+import tensorflow.keras
+from tensorflow.keras.models import Model
+from tensorflow.keras.layers import Conv2D, MaxPool2D,  \
     Dropout, Dense, Input, concatenate,      \
     GlobalAveragePooling2D, AveragePooling2D,\
     Flatten
 
 import cv2 #python -m pip install opencv-python
 import numpy as np
-from keras.datasets import cifar10
-from keras.utils import np_utils
+from tensorflow.keras.datasets import cifar10
+from tensorflow.keras.utils import np_utils
 
 import math
-from keras.optimizers import SGD
-from keras.callbacks import LearningRateScheduler
+from tensorflow.keras.optimizers import SGD
+from tensorflow.keras.callbacks import LearningRateScheduler
 
-from tensorflow.python.client import device_lib
-print(device_lib.list_local_devices())
+# from tensorflow.python.client import device_lib
+# print(device_lib.list_local_devices())
 
 num_classes = 10
 
