@@ -3,7 +3,6 @@
 import tensorflow as tf
 print(tf.__version__)
 
-import tensorflow.keras
 from tensorflow.keras.models import Model
 from tensorflow.keras.layers import Conv2D, MaxPool2D,  \
     Dropout, Dense, Input, concatenate,      \
@@ -61,8 +60,8 @@ def load_cifar10_data(img_rows, img_cols):
 
 X_train, y_train, X_test, y_test = load_cifar10_data(224, 224)
 
-kernel_init = keras.initializers.glorot_uniform()
-bias_init = keras.initializers.Constant(value=0.2)
+kernel_init = tf.keras.initializers.glorot_uniform()
+bias_init = tf.keras.initializers.Constant(value=0.2)
 
 def inception_module(x,
                      filters_1x1,
