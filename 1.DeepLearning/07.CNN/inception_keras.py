@@ -16,6 +16,9 @@ import math
 from keras.optimizers import SGD
 from keras.callbacks import LearningRateScheduler
 
+from tensorflow.python.client import device_lib
+print(device_lib.list_local_devices())
+
 num_classes = 10
 
 label_dict = {
@@ -36,8 +39,8 @@ def load_cifar10_data(img_rows, img_cols):
     (X_train, Y_train), (X_test, Y_test) = cifar10.load_data()
 
     # Resize training images
-    X_train = np.array([cv2.resize(img, (img_rows, img_cols)) for img in X_train[:, :, :, :]])
-    X_test = np.array([cv2.resize(img, (img_rows, img_cols)) for img in X_test[:, :, :, :]])
+    # X_train = np.array([cv2.resize(img, (img_rows, img_cols)) for img in X_train[:, :, :, :]])
+    # X_test = np.array([cv2.resize(img, (img_rows, img_cols)) for img in X_test[:, :, :, :]])
 
     X_train = X_train.astype('float32') / 255.0
     X_test = X_test.astype('float32') / 255.0
