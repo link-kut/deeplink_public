@@ -13,7 +13,7 @@ from tensorflow.keras.layers import Conv2D, MaxPool2D,  \
 import cv2 #python -m pip install opencv-python
 import numpy as np
 from tensorflow.keras.datasets import cifar10
-from tensorflow.keras.utils import np_utils
+from tensorflow.keras.utils import utils
 
 import math
 from tensorflow.keras.optimizers import SGD
@@ -49,8 +49,8 @@ def load_cifar10_data(img_rows, img_cols):
     X_test = X_test.astype('float32') / 255.0
 
     # Transform targets to keras compatible format
-    Y_train = np_utils.to_categorical(Y_train, num_classes)
-    Y_test = np_utils.to_categorical(Y_test, num_classes)
+    Y_train = utils.to_categorical(Y_train, num_classes)
+    Y_test = utils.to_categorical(Y_test, num_classes)
 
     print("X_train: {0}".format(X_train.shape))
     print("Y_train: {0}".format(Y_train.shape))
