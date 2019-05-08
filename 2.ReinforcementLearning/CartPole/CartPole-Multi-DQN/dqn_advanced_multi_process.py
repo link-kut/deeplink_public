@@ -36,7 +36,7 @@ num_workers = 4
 num_hidden_layers = 3
 
 transfer = True
-num_weight_transfer_hidden_layers = 1
+num_weight_transfer_hidden_layers = 4
 
 verbose = False
 
