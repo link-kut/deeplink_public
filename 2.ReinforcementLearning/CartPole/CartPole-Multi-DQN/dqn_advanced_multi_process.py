@@ -10,7 +10,7 @@ from logger import get_logger
 import sys
 import json
 
-print(tf.__version__)
+print(tf.__version__) # 1.13.1
 
 from tensorflow.keras.layers import Dense, Input
 
@@ -37,7 +37,6 @@ num_hidden_layers = 3
 
 transfer = True
 num_weight_transfer_hidden_layers = 4
-
 verbose = False
 
 
