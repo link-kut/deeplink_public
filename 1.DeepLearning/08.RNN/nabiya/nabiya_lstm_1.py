@@ -1,5 +1,9 @@
 # https://tykimos.github.io/2017/04/09/RNN_Layer_Talk/
 # 0. 사용할 패키지 불러오기
+import tensorflow as tf
+
+print(tf.__version__)
+
 import keras
 import numpy as np
 from keras.models import Sequential

@@ -1,3 +1,6 @@
+import tensorflow as tf
+print(tf.__version__)
+
 # 0. 사용할 패키지 불러오기
 import keras
 import numpy as np
@@ -16,8 +19,6 @@ np.random.seed(5)
 # 코드 사전 정의
 code2scale = {'c': 0, 'd': 1, 'e': 2, 'f': 3, 'g': 4, 'a': 5, 'b': 6}
 code2length = {'4': 0, '8': 1}
-
-max_scale_value = len(code2scale) - 1
 
 code2idx = {'c4': 0, 'd4': 1, 'e4': 2, 'f4': 3, 'g4': 4, 'a4': 5, 'b4': 6,
             'c8': 7, 'd8': 8, 'e8': 9, 'f8': 10, 'g8': 11, 'a8': 12, 'b8': 13}
@@ -48,6 +49,8 @@ def seq2dataset(seq, window_size):
 
     return np.array(dataset_X), np.array(dataset_Y)
 
+
+max_scale_value = len(code2scale) - 1
 
 # 속성 변환 함수
 def code2features(code):

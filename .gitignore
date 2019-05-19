@@ -11,6 +11,8 @@ __pycache__/
 *.jpg
 *.h5
 *.tgz
+*.mid
+*.midi
 
 # Distribution / packaging
 .Python
