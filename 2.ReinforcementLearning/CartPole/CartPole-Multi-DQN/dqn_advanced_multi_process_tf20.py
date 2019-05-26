@@ -33,7 +33,7 @@ ddqn = True
 num_hidden_layers = 3
 num_weight_transfer_hidden_layers = 1
 num_workers = 4
-transfer = False
+transfer = True
 verbose = False
 
 
@@ -594,7 +594,7 @@ if __name__ == '__main__':
                 win_reward,
                 loss_trials,
                 max_episodes,
-                5000 + worker_idx
+                10000 + worker_idx
             ))
 
             clients.append(client)
