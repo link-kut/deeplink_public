@@ -9,6 +9,7 @@ data = {
     'number': 3
 }
 
+
 @app.route('/echo', methods=['GET', 'POST', 'PUT', 'DELETE'])
 def api_echo():
     if request.method == 'GET':
