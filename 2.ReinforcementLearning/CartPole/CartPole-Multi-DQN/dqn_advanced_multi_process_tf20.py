@@ -31,9 +31,9 @@ warnings.filterwarnings("ignore")
 
 ddqn = True
 num_hidden_layers = 3
-num_weight_transfer_hidden_layers = 1
+num_weight_transfer_hidden_layers = 4
 num_workers = 4
-transfer = True
+transfer = False
 verbose = False
 
 
@@ -52,7 +52,7 @@ def exp_moving_average(values, window):
 
 
 class DQNAgent:
-    def __init__(self, worker_idx, env_id, win_trials, win_reward, loss_trials, max_episodes):
+    def __init__(self, worker_idx, env_id, win_reward, loss_trials, max_episodes):
         self.worker_idx = worker_idx
         self.env = gym.make(env_id)
         self.env.seed(0)
@@ -71,7 +71,6 @@ class DQNAgent:
         # iteratively applying decay til 10% exploration/90% exploitation
         self.epsilon_min = 0.1
 
-        self.win_trials = win_trials
         self.win_reward = win_reward
 
         self.loss_trials = loss_trials
@@ -108,13 +107,15 @@ class DQNAgent:
         self.local_scores = []
         self.local_losses = []
 
+        self.score_dequeue = deque(maxlen=100)
+
     # Q Network is 256-256-256-2 MLP
     def build_model(self, n_inputs, n_outputs):
         inputs = Input(shape=(n_inputs,), name='state_' + str(self.worker_idx))
-        x = Dense(256, activation='relu', name="hidden_layer_0_" + str(self.worker_idx))(inputs)
-        x = Dense(256, activation='relu', name="hidden_layer_1_" + str(self.worker_idx))(x)
-        x = Dense(256, activation='relu', name="hidden_layer_2_" + str(self.worker_idx))(x)
-        x = Dense(n_outputs, activation='linear', name='output_layer_' + str(self.worker_idx))(x)
+        x = Dense(256, activation='relu', name="layer_0_" + str(self.worker_idx))(inputs)
+        x = Dense(256, activation='relu', name="layer_1_" + str(self.worker_idx))(x)
+        x = Dense(256, activation='relu', name="layer_2_" + str(self.worker_idx))(x)
+        x = Dense(n_outputs, activation='linear', name='layer_3_' + str(self.worker_idx))(x)
         model = Model(inputs, x)
         model.summary()
         return model
@@ -128,10 +129,6 @@ class DQNAgent:
         self.target_q_model.set_weights(
             self.q_model.get_weights()
         )
-
-    # copy trained other worker's Q Network params to current Q Network
-    def update_layer_weights_from_other_worker(self, layer, weights):
-        self.q_model.get_layer(name="layer_" + str(layer)).set_weights(weights)
 
     # eps-greedy policy
     def act(self, state):
@@ -247,9 +244,11 @@ class DQNAgent:
                 # in CartPole-v0, action=0 is left and action=1 is right
                 action = self.act(state)
                 next_state, reward, done, _ = self.env.step(action)
+
                 # in CartPole-v0:
                 # state = [pos, vel, theta, angular speed]
                 next_state = np.reshape(next_state, [1, state_size])
+
                 # store every experience unit in replay buffer
                 self.remember(state, action, reward, next_state, done)
                 state = next_state
@@ -264,29 +263,31 @@ class DQNAgent:
 
             self.local_losses.append(loss)
             self.local_scores.append(score)
+            self.score_dequeue.append(score)
 
-            mean_loss = exp_moving_average(self.local_losses, 10)[-1]
-            mean_score = exp_moving_average(self.local_scores, 10)[-1]
+            ema_loss = exp_moving_average(self.local_losses, 10)[-1]
+            ema_score = exp_moving_average(self.local_scores, 10)[-1]
+            mean_score_over_recent_100_episodes = np.mean(self.score_dequeue)
 
-            if self.global_max_mean_score < mean_score:
-                self.global_max_mean_score = mean_score
+            if self.global_max_mean_score < mean_score_over_recent_100_episodes:  # Worker에 의하여 더 좋은 Score를 찾음
+                self.global_max_mean_score = mean_score_over_recent_100_episodes
                 send_weights = True
 
-                msg = ">>> Worker {0}: Find New Best Weights!!! - global_max_score: {1}".format(
+                msg = ">>> Worker {0}: Find New Global Max Mean Score: {1:>4.2f}".format(
                     self.worker_idx,
                     self.global_max_mean_score
                 )
                 self.logger.info(msg)
                 if verbose: print(msg)
-
             else:
                 send_weights = False
 
             continue_loop = self.send_episode_info_and_adapt_best_weights(
                 socket,
+                episode,
                 loss,
                 score,
-                mean_score,
+                mean_score_over_recent_100_episodes,
                 send_weights=send_weights
             )
 
@@ -294,24 +295,25 @@ class DQNAgent:
                 time.sleep(1)
                 break
 
-            msg = "Worker {0} - Episode {1:>2d}: Loss = {2:6.4f} (Mean: {3:6.4f}), Score = {4:5.1f} (Mean: {5:>4.2f} in {6} episodes".format(
+            msg = "Worker {0}-Ep. {1:>2d}: Loss={2:6.4f} (EMA: {3:6.4f}), Score={4:5.1f} (EMA: {" \
+                  "5:>4.2f}, Mean: {6:>4.2f})".format(
                 self.worker_idx,
                 episode,
                 loss,
-                mean_loss,
+                ema_loss,
                 score,
-                mean_score,
-                self.win_trials
+                ema_score,
+                mean_score_over_recent_100_episodes,
             )
+
             self.logger.info(msg)
             if verbose: print(msg)
 
-            if mean_score >= self.win_reward and episode >= self.win_trials:
-                msg = "******* Worker {0} - Solved in episode {1}: Mean score = {2} in {3} episodes: Epsilon: {4}".format(
+            if mean_score_over_recent_100_episodes >= self.win_reward:
+                msg = "******* Worker {0} - Solved in episode {1}: Mean score = {2} - Epsilon: {3}".format(
                     self.worker_idx,
                     episode,
-                    mean_score,
-                    self.win_trials,
+                    ema_score,
                     self.epsilon
                 )
                 self.logger.info(msg)
@@ -327,12 +329,12 @@ class DQNAgent:
         # close the env and write monitor result info to disk
         self.env.close()
 
-    def send_episode_info_and_adapt_best_weights(self, socket, loss, score, mean_score, send_weights):
+    def send_episode_info_and_adapt_best_weights(self, socket, episode, loss, score, mean_score, send_weights):
         if transfer:
             if send_weights:
                 weights = {}
                 for layer_id in range(num_weight_transfer_hidden_layers):
-                    layer_name = "hidden_layer_{0}_{1}".format(
+                    layer_name = "layer_{0}_{1}".format(
                         layer_id,
                         worker_idx
                     )
@@ -342,6 +344,7 @@ class DQNAgent:
 
             episode_msg = {
                 "type": "episode",
+                "episode": episode,
                 "worker_idx": self.worker_idx,
                 "loss": loss,
                 "score": score,
@@ -370,22 +373,27 @@ class DQNAgent:
                 global_max_mean_score = episode_ack_msg["global_max_mean_score"]
                 best_weights = episode_ack_msg["best_weights"]
 
-                if len(best_weights) > 0 and not send_weights:
+                if len(best_weights) > 0 and not send_weights: # Worker 스스로는 Best Score/weights 를 못 찾았지만 서버로 부터 Best
+                    # Score/weights 를 받은 경우
                     self.global_max_mean_score = global_max_mean_score
 
                     for layer_id in range(num_weight_transfer_hidden_layers):
-                        layer_name = "hidden_layer_{0}_{1}".format(
+                        layer_name = "layer_{0}_{1}".format(
                             layer_id,
                             worker_idx
                         )
                         self.q_model.get_layer(name=layer_name).set_weights(best_weights[layer_id])
 
-                    msg = ">>> Worker {0}: Set New Best Weights to Local Model!!! - global_max_score: {1}".format(
+                    msg = ">>> Worker {0}: Set New Best Weights from Worker {1} to Local Model!!! - " \
+                          "global_max_score: {2}".format(
                         self.worker_idx,
+                        episode_ack_msg["best_found_worker"],
                         self.global_max_mean_score
                     )
                     self.logger.info(msg)
                     if verbose: print(msg)
+            else:
+                pass
         elif episode_ack_msg["type"] == "solved":
             msg = "Solved by Other Worker"
             self.logger.info(msg)
@@ -406,12 +414,12 @@ class DQNAgent:
         socket.send(solve_msg)
 
 
-def worker_func(worker_idx, env_id, win_trials, win_reward, loss_trials, max_episodes, port):
+def worker_func(worker_idx, env_id, win_reward, loss_trials, max_episodes, port):
     context = zmq.Context()
     socket = context.socket(zmq.REQ)
     socket.connect('tcp://127.0.0.1:' + str(port))
 
-    dqn_agent = DQNAgent(worker_idx, env_id, win_trials, win_reward, loss_trials, max_episodes)
+    dqn_agent = DQNAgent(worker_idx, env_id, win_reward, loss_trials, max_episodes)
     dqn_agent.start_rl(socket)
 
 
@@ -422,6 +430,7 @@ class MultiDQN:
         self.losses = {}
         self.global_max_mean_score = 0
         self.best_weights = None
+        self.best_found_worker = -1
 
         for worker_idx in range(num_workers):
             self.scores[worker_idx] = []
@@ -503,11 +512,14 @@ def server_func(multi_dqn):
 
                 if multi_dqn.continue_loop:
                     if transfer:
+                        episode = episode_msg["episode"]
                         mean_score = episode_msg["mean_score"]
 
                         if len(episode_msg["weights"]) > 0: # Worker로 부터 Best Weights를 수신 받음
-                            msg = ">>> Best Weights Found by Worker {0}!!! - Last Global Mean Max Score: {1}, New Global Mean Max Score: {2}".format(
+                            msg = ">>> Best Weights Found by Worker {0} at Episode {1}!!! - Last Global Max Mean " \
+                                  "Score: {2:4.1f}, New Global Max Mean Score: {3:4.1f}".format(
                                 worker_idx,
+                                episode,
                                 multi_dqn.global_max_mean_score,
                                 mean_score
                             )
@@ -516,32 +528,43 @@ def server_func(multi_dqn):
 
                             multi_dqn.global_max_mean_score = mean_score
                             multi_dqn.best_weights = episode_msg["weights"]
+                            multi_dqn.best_found_worker = worker_idx
                             max_mean_score_notification_per_workers = 1
+
+                            episode_ack_msg = {
+                                "type": "episode_ack",
+                                "global_max_mean_score": multi_dqn.global_max_mean_score,
+                                "best_weights": multi_dqn.best_weights,
+                                "best_found_worker": multi_dqn.best_found_worker
+                            }
+                            send_to_worker(sockets[worker_idx], episode_ack_msg)
+
                         else: # Worker로 부터 Best Weights를 수신 받지 못함
+                            max_mean_score_notification_per_workers += 1
+
+                            episode_ack_msg = {
+                                "type": "episode_ack",
+                                "global_max_mean_score": multi_dqn.global_max_mean_score,
+                                "best_weights": multi_dqn.best_weights,
+                                "best_found_worker": multi_dqn.best_found_worker
+                            }
+                            send_to_worker(sockets[worker_idx], episode_ack_msg)
+
                             if max_mean_score_notification_per_workers == num_workers:
                                 max_mean_score_notification_per_workers = 0
                                 multi_dqn.best_weights = {}
-                            else:
-                                max_mean_score_notification_per_workers += 1
-
-                        episode_ack_msg = {
-                            "type": "episode_ack",
-                            "global_max_mean_score": multi_dqn.global_max_mean_score,
-                            "best_weights": multi_dqn.best_weights
-                        }
+                                multi_dqn.best_found_worker = -1
                     else:
                         episode_ack_msg = {
                             "type": "episode_ack"
                         }
+                        send_to_worker(sockets[worker_idx], episode_ack_msg)
                 else:
                     solved_notification_per_workers += 1
                     episode_ack_msg = {
                         "type": "solved"
                     }
-
-                episode_ack_msg = pickle.dumps(episode_ack_msg, protocol=-1)
-                episode_ack_msg = zlib.compress(episode_ack_msg)
-                sockets[worker_idx].send(episode_ack_msg)
+                    send_to_worker(sockets[worker_idx], episode_ack_msg)
             elif episode_msg["type"] == "solved":
                 msg = "SOLVED!!! - Last Episode: {0} by {1} {2}".format(
                     episode_msg["last_episode"],
@@ -560,13 +583,15 @@ def server_func(multi_dqn):
             break
 
 
-if __name__ == '__main__':
-    # the number of trials without falling over
-    win_trials = 100
+def send_to_worker(socket, episode_ack_msg):
+    episode_ack_msg = pickle.dumps(episode_ack_msg, protocol=-1)
+    episode_ack_msg = zlib.compress(episode_ack_msg)
+    socket.send(episode_ack_msg)
 
+
+if __name__ == '__main__':
     # the CartPole-v0 is considered solved if for 100 consecutive trials,
-    # the cart pole has not fallen over and it has achieved an average
-    # reward of 195.0
+    # the cart pole has not fallen over and it has achieved an average reward of 195.0.
     # a reward of +1 is provided for every timestep the pole remains
     # upright
     win_reward = 195.0
@@ -578,7 +603,9 @@ if __name__ == '__main__':
 
     env_id = "CartPole-v0"
 
-    for _ in range(10):
+    num_experiments = 1
+
+    for _ in range(num_experiments):
         # instantiate the DQN/DDQN agent
         multi_dqn = MultiDQN()
 
@@ -590,7 +617,6 @@ if __name__ == '__main__':
             client = Process(target=worker_func, args=(
                 worker_idx,
                 env_id,
-                win_trials,
                 win_reward,
                 loss_trials,
                 max_episodes,
