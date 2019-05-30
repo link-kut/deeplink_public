@@ -276,7 +276,8 @@ class DQNAgent:
             if self.global_max_mean_score < mean_score_over_recent_100_episodes:  # Worker에 의하여 더 좋은 Score를 찾음
                 self.global_max_mean_score = mean_score_over_recent_100_episodes
                 send_weights = True
-
+                self.update_target_model_weights()
+                
                 msg = ">>> Worker {0}: Find New Global Max Mean Score: {1:>4.2f}".format(
                     self.worker_idx,
                     self.global_max_mean_score
