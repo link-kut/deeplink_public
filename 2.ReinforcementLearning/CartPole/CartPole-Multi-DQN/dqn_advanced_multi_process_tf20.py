@@ -11,6 +11,7 @@ import sys
 import json
 
 print(tf.__version__)
+tf.config.gpu.set_per_process_memory_fraction(0.4)
 
 from tensorflow.keras.layers import Dense, Input
 
