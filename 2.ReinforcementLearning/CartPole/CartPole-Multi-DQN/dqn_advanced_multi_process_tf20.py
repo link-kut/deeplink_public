@@ -317,7 +317,7 @@ class DQNAgent:
 
             send_weights = False
             # Worker에 의하여 더 높은 Score를 찾음
-            if score_transfer and self.global_max_mean_score < mean_score_over_recent_100_episodes:
+            if episode > 10 and score_transfer and self.global_max_mean_score < mean_score_over_recent_100_episodes:
                 self.global_max_mean_score = mean_score_over_recent_100_episodes
                 send_weights = True
                 self.update_target_model_weights()
@@ -330,7 +330,7 @@ class DQNAgent:
                 if verbose: print(msg)
 
             # Worker에 의하여 더 낮은 Loss를 찾음
-            if loss_transfer and mean_loss_over_recent_100_episodes < self.global_min_mean_loss:
+            if episode > 10 and loss_transfer and mean_loss_over_recent_100_episodes < self.global_min_mean_loss:
                 self.global_min_mean_loss = mean_loss_over_recent_100_episodes
                 send_weights = True
                 self.update_target_model_weights()
@@ -437,8 +437,8 @@ class DQNAgent:
                 global_max_mean_score = episode_ack_msg["global_max_mean_score"]
                 best_weights = episode_ack_msg["best_weights"]
 
-                if len(best_weights) > 0 and not send_weights: # Worker 스스로는 Best Score/weights 를 못 찾았지만 서버로 부터 Best
-                    # Score/weights 를 받은 경우
+                if best_weights is not None and len(best_weights) > 0 and not send_weights:
+                    # Worker 스스로는 Best Score/Weights 를 못 찾았지만 서버로 부터 Best Score/weights 를 받은 경우
                     self.global_max_mean_score = global_max_mean_score
 
                     for layer_id in range(num_weight_transfer_hidden_layers):
@@ -462,8 +462,8 @@ class DQNAgent:
                 global_min_mean_loss = episode_ack_msg["global_min_mean_loss"]
                 best_weights = episode_ack_msg["best_weights"]
 
-                if len(best_weights) > 0 and not send_weights: # Worker 스스로는 Best Score/weights 를 못 찾았지만 서버로 부터 Best
-                    # Score/weights 를 받은 경우
+                if best_weights is not None and len(best_weights) > 0 and not send_weights:
+                    # Worker 스스로는 Best Score/weights 를 못 찾았지만 서버로 부터 Best Score/weights 를 받은 경우
                     self.global_min_mean_loss = global_min_mean_loss
 
                     for layer_id in range(num_weight_transfer_hidden_layers):
