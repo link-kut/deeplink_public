@@ -27,6 +27,10 @@ import matplotlib.pyplot as plt
 import os
 import pickle
 
+from numpy.random import seed
+seed(1)
+tf.random.set_seed(2)
+
 import warnings
 warnings.filterwarnings("ignore")
 
@@ -122,10 +126,38 @@ class DQNAgent:
     # Q Network is 256-256-256-2 MLP
     def build_model(self, n_inputs, n_outputs):
         inputs = Input(shape=(n_inputs,), name='state_' + str(self.worker_idx))
-        x = Dense(255, activation='relu', name="layer_0_" + str(self.worker_idx))(inputs)
-        x = Dense(255, activation='relu', name="layer_1_" + str(self.worker_idx))(x)
-        x = Dense(255, activation='relu', name="layer_2_" + str(self.worker_idx))(x)
-        x = Dense(n_outputs, activation='linear', name='layer_3_' + str(self.worker_idx))(x)
+        x = Dense(
+            units=255,
+            kernel_initializer='glorot_normal',
+            bias_initializer='zero',
+            activation='relu',
+            name="layer_0_" + str(self.worker_idx)
+        )(inputs)
+
+        x = Dense(
+            units=255,
+            kernel_initializer='glorot_normal',
+            bias_initializer='zero',
+            activation='relu',
+            name="layer_1_" + str(self.worker_idx)
+        )(x)
+
+        x = Dense(
+            units=255,
+            kernel_initializer='glorot_normal',
+            bias_initializer='zero',
+            activation='relu',
+            name="layer_2_" + str(self.worker_idx)
+        )(x)
+
+        x = Dense(
+            units=n_outputs,
+            kernel_initializer='glorot_normal',
+            bias_initializer='zero',
+            activation='linear',
+            name='layer_3_' + str(self.worker_idx)
+        )(x)
+
         model = Model(inputs, x)
         model.summary()
         return model
