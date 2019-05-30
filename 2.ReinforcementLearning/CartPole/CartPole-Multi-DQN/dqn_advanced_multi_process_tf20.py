@@ -315,7 +315,7 @@ class DQNAgent:
                 time.sleep(1)
                 break
 
-            msg = "Worker {0}-Ep. {1:>2d}: Loss={2:6.4f} (EMA: {3:6.4f}, Mean: {4:6,4f}), Score={5:5.1f} (EMA: {" \
+            msg = "Worker {0}-Ep. {1:>2d}: Loss={2:6.4f} (EMA: {3:6.4f}, Mean: {4:6.4f}), Score={5:5.1f} (EMA: {" \
                   "6:>4.2f}, Mean: {7:>4.2f})".format(
                 self.worker_idx,
                 episode,
