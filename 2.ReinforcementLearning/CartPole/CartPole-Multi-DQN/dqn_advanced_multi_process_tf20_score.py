@@ -11,7 +11,7 @@ import sys
 import json
 
 print(tf.__version__)
-tf.config.gpu.set_per_process_memory_fraction(0.4)
+tf.config.gpu.set_per_process_memory_fraction(0.1)
 
 from tensorflow.keras.layers import Dense, Input
 
@@ -277,7 +277,7 @@ class DQNAgent:
                 self.global_max_mean_score = mean_score_over_recent_100_episodes
                 send_weights = True
                 self.update_target_model_weights()
-                
+
                 msg = ">>> Worker {0}: Find New Global Max Mean Score: {1:>4.2f}".format(
                     self.worker_idx,
                     self.global_max_mean_score
