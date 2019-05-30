@@ -114,9 +114,9 @@ class DQNAgent:
     # Q Network is 256-256-256-2 MLP
     def build_model(self, n_inputs, n_outputs):
         inputs = Input(shape=(n_inputs,), name='state_' + str(self.worker_idx))
-        x = Dense(256, activation='relu', name="layer_0_" + str(self.worker_idx))(inputs)
-        x = Dense(256, activation='relu', name="layer_1_" + str(self.worker_idx))(x)
-        x = Dense(256, activation='relu', name="layer_2_" + str(self.worker_idx))(x)
+        x = Dense(24, activation='relu', name="layer_0_" + str(self.worker_idx))(inputs)
+        x = Dense(48, activation='relu', name="layer_1_" + str(self.worker_idx))(x)
+        x = Dense(16, activation='relu', name="layer_2_" + str(self.worker_idx))(x)
         x = Dense(n_outputs, activation='linear', name='layer_3_' + str(self.worker_idx))(x)
         model = Model(inputs, x)
         model.summary()
@@ -292,7 +292,7 @@ class DQNAgent:
                 self.global_min_mean_loss = mean_loss_over_recent_100_episodes
                 send_weights = True
 
-                msg = ">>> Worker {0}: Find New Global Min Mean Loss: {1:>4.2f}".format(
+                msg = ">>> Worker {0}: Find New Global Min Mean Loss: {1:>6.4f}".format(
                     self.worker_idx,
                     self.global_min_mean_loss
                 )
@@ -429,9 +429,10 @@ class DQNAgent:
                             worker_idx
                         )
                         self.q_model.get_layer(name=layer_name).set_weights(best_weights[layer_id])
+                        self.update_target_model_weights()
 
                     msg = ">>> Worker {0}: Set New Best Weights from Worker {1} to Local Model!!! - " \
-                          "global_min_mean_loss: {2}".format(
+                          "global_min_mean_loss: {2:6.4f}".format(
                         self.worker_idx,
                         episode_ack_msg["best_found_worker"],
                         self.global_min_mean_loss
