@@ -472,7 +472,8 @@ class DQNAgent:
                             worker_idx
                         )
                         self.q_model.get_layer(name=layer_name).set_weights(best_weights[layer_id])
-                        self.update_target_model_weights()
+
+                    self.update_target_model_weights()
 
                     msg = ">>> Worker {0}: Set New Best Weights from Worker {1} to Local Model!!! - " \
                           "global_min_mean_loss: {2:6.4f}".format(
