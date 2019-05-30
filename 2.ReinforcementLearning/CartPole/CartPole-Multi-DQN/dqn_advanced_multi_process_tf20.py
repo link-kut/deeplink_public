@@ -176,13 +176,13 @@ class DQNAgent:
     def act(self, state):
         if np.random.rand() < self.epsilon:
             # explore - do random action
-            return self.action_space.sample()
+            return self.action_space.sample(), True
 
         # exploit
         q_values = self.q_model.predict(state)
 
         # select the action with max Q-value
-        return np.argmax(q_values[0])
+        return np.argmax(q_values[0]), False
 
     # store experiences in the replay buffer
     def remember(self, state, action, reward, next_state, done):
@@ -282,9 +282,15 @@ class DQNAgent:
             state = np.reshape(state, [1, state_size])
             done = False
             total_reward = 0
+
+            has_random_action = False
             while not done:
                 # in CartPole-v0, action=0 is left and action=1 is right
-                action = self.act(state)
+                action, is_random = self.act(state)
+
+                if is_random:
+                    has_random_action = True
+
                 next_state, reward, done, _ = self.env.step(action)
 
                 # in CartPole-v0:
@@ -357,7 +363,7 @@ class DQNAgent:
                 break
 
             msg = "Worker {0}-Ep. {1:>2d}: Loss={2:6.4f} (EMA: {3:6.4f}, Mean: {4:6.4f}), Score={5:5.1f} (EMA: {" \
-                  "6:>4.2f}, Mean: {7:>4.2f}), Epsilon: {8:>6.4f}".format(
+                  "6:>4.2f}, Mean: {7:>4.2f}), Epsilon: {8:>6.4f}, Has_Random_action: {9}".format(
                 self.worker_idx,
                 episode,
                 loss,
@@ -366,7 +372,8 @@ class DQNAgent:
                 score,
                 ema_score,
                 mean_score_over_recent_100_episodes,
-                self.epsilon
+                self.epsilon,
+                has_random_action
             )
 
             self.logger.info(msg)
