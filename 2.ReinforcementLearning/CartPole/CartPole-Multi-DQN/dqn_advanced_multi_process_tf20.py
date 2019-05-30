@@ -38,8 +38,8 @@ ddqn = True
 num_hidden_layers = 3
 num_weight_transfer_hidden_layers = 4
 num_workers = 4
-score_transfer = True
-loss_transfer = False
+score_based_transfer = True
+loss_based_transfer = False
 verbose = False
 
 def exp_moving_average(values, window):
@@ -74,7 +74,7 @@ class DQNAgent:
         self.epsilon = 1.0
 
         # iteratively applying decay til 10% exploration/90% exploitation
-        self.epsilon_min = 0.1
+        self.epsilon_min = 0.01
 
         self.win_reward = win_reward
 
@@ -103,9 +103,9 @@ class DQNAgent:
             "Double DQN" if ddqn else "DQN",
         ))
 
-        if score_transfer:
+        if score_based_transfer:
             print("SCORE-based TRANSFER!!!")
-        elif loss_transfer:
+        elif loss_based_transfer:
             print("LOSS-based TRANSFER!!!")
         else:
             print("NO TRANSFER")
@@ -317,7 +317,7 @@ class DQNAgent:
 
             send_weights = False
             # Worker에 의하여 더 높은 Score를 찾음
-            if episode > 10 and score_transfer and self.global_max_mean_score < mean_score_over_recent_100_episodes:
+            if episode > 10 and score_based_transfer and self.global_max_mean_score < mean_score_over_recent_100_episodes:
                 self.global_max_mean_score = mean_score_over_recent_100_episodes
                 send_weights = True
                 self.update_target_model_weights()
@@ -330,7 +330,7 @@ class DQNAgent:
                 if verbose: print(msg)
 
             # Worker에 의하여 더 낮은 Loss를 찾음
-            if episode > 10 and loss_transfer and mean_loss_over_recent_100_episodes < self.global_min_mean_loss:
+            if episode > 10 and loss_based_transfer and mean_loss_over_recent_100_episodes < self.global_min_mean_loss:
                 self.global_min_mean_loss = mean_loss_over_recent_100_episodes
                 send_weights = True
                 self.update_target_model_weights()
@@ -357,7 +357,7 @@ class DQNAgent:
                 break
 
             msg = "Worker {0}-Ep. {1:>2d}: Loss={2:6.4f} (EMA: {3:6.4f}, Mean: {4:6.4f}), Score={5:5.1f} (EMA: {" \
-                  "6:>4.2f}, Mean: {7:>4.2f})".format(
+                  "6:>4.2f}, Mean: {7:>4.2f}), Epsilon: {8:>6.4f}".format(
                 self.worker_idx,
                 episode,
                 loss,
@@ -366,6 +366,7 @@ class DQNAgent:
                 score,
                 ema_score,
                 mean_score_over_recent_100_episodes,
+                self.epsilon
             )
 
             self.logger.info(msg)
@@ -393,7 +394,7 @@ class DQNAgent:
 
     def send_episode_info_and_adapt_best_weights(self, socket, episode, loss, mean_loss, score, mean_score,
                                                  send_weights):
-        if score_transfer or loss_transfer:
+        if score_based_transfer or loss_based_transfer:
             if send_weights:
                 weights = {}
                 for layer_id in range(num_weight_transfer_hidden_layers):
@@ -433,7 +434,7 @@ class DQNAgent:
 
         continue_loop = True
         if episode_ack_msg["type"] == "episode_ack":
-            if score_transfer:
+            if score_based_transfer:
                 global_max_mean_score = episode_ack_msg["global_max_mean_score"]
                 best_weights = episode_ack_msg["best_weights"]
 
@@ -458,7 +459,7 @@ class DQNAgent:
                     self.logger.info(msg)
                     if verbose: print(msg)
 
-            if loss_transfer:
+            if loss_based_transfer:
                 global_min_mean_loss = episode_ack_msg["global_min_mean_loss"]
                 best_weights = episode_ack_msg["best_weights"]
 
@@ -519,6 +520,8 @@ class MultiDQN:
         # stores the reward per episode
         self.scores = {}
         self.losses = {}
+        self.weight_update_episodes = []
+
         self.global_max_mean_score = 0
         self.global_min_mean_loss = 0
         self.best_weights = None
@@ -560,15 +563,24 @@ class MultiDQN:
                 min_size = len(self.scores[worker_idx])
 
         for worker_idx in range(num_workers):
-            axarr[worker_idx][0].plot(range(min_size), self.losses[worker_idx][0:min_size], 'b')
+            losses = self.losses[worker_idx][0:min_size]
+
+            axarr[worker_idx][0].plot(range(min_size), losses, 'b')
             axarr[worker_idx][0].plot(range(min_size), exp_moving_average(self.losses[worker_idx], 10)[0:min_size],
                                       'r')
             # axarr[worker_idx][0].legend(["Loss", "Loss_EMA"])
 
-            axarr[worker_idx][1].plot(range(min_size), self.scores[worker_idx][0:min_size], 'b')
+            scores = self.scores[worker_idx][0:min_size]
+            axarr[worker_idx][1].plot(range(min_size), scores, 'b')
             axarr[worker_idx][1].plot(range(min_size), exp_moving_average(self.scores[worker_idx], 10)[0:min_size],
                                       'r')
             # axarr[worker_idx][1].legend(["Score", "Score_EMA"])
+
+            # axarr[worker_idx][1].scatter(
+            #     x=self.weight_update_episodes,
+            #     y=np.ndarray(scores)[self.weight_update_episodes],
+            #     s=10
+            # )
 
         plt.savefig("./graphs/loss_score.png")
         plt.close('all')
@@ -603,13 +615,14 @@ def server_func(multi_dqn):
                 multi_dqn.update_score(episode_msg["worker_idx"], score=episode_msg["score"])
 
                 if multi_dqn.continue_loop:
-                    if score_transfer or loss_transfer:
+                    if score_based_transfer or loss_based_transfer:
                         episode = episode_msg["episode"]
                         mean_score = episode_msg["mean_score"]
                         mean_loss = episode_msg["mean_loss"]
 
                         if len(episode_msg["weights"]) > 0: # Worker로 부터 Best Weights를 수신 받음
-                            if score_transfer:
+                            multi_dqn.weight_update_episodes.append(episode)
+                            if score_based_transfer:
                                 msg = ">>> Best Weights Found by Worker {0} at Episode {1}!!! - Last Global Max Mean " \
                                       "Score: {2:4.1f}, New Global Max Mean Score: {3:4.1f}".format(
                                     worker_idx,
@@ -619,7 +632,7 @@ def server_func(multi_dqn):
                                 )
                                 multi_dqn.global_max_mean_score = mean_score
 
-                            if loss_transfer:
+                            if loss_based_transfer:
                                 msg = ">>> Best Weights Found by Worker {0} at Episode {1}!!! - Last Global Min Mean " \
                                       "Loss: {2:6.4f}, New Global Min Mean Loss: {3:6.4f}".format(
                                     worker_idx,
@@ -636,7 +649,7 @@ def server_func(multi_dqn):
                             multi_dqn.best_found_worker = worker_idx
                             notification_per_workers = 1
 
-                            if score_transfer:
+                            if score_based_transfer:
                                 episode_ack_msg = {
                                     "type": "episode_ack",
                                     "global_max_mean_score": multi_dqn.global_max_mean_score,
@@ -656,7 +669,7 @@ def server_func(multi_dqn):
                         else: # Worker로 부터 Best Weights를 수신 받지 못함
                             notification_per_workers += 1
 
-                            if score_transfer:
+                            if score_based_transfer:
                                 episode_ack_msg = {
                                     "type": "episode_ack",
                                     "global_max_mean_score": multi_dqn.global_max_mean_score,
@@ -691,7 +704,7 @@ def server_func(multi_dqn):
                 msg = "SOLVED!!! - Last Episode: {0} by {1} {2}".format(
                     episode_msg["last_episode"],
                     "DDQN" if ddqn else "DQN",
-                    "with Transfer" if score_transfer or loss_transfer else "Without Transfer"
+                    "with Transfer" if score_based_transfer or loss_based_transfer else "Without Transfer"
                 )
                 multi_dqn.log_info(msg)
                 if verbose: print(msg)
