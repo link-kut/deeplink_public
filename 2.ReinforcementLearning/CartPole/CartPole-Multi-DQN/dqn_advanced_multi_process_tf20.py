@@ -37,7 +37,6 @@ num_workers = 4
 transfer = False
 verbose = False
 
-
 def exp_moving_average(values, window):
     """ Numpy implementation of EMA
     """
@@ -104,11 +103,13 @@ class DQNAgent:
         self.max_episodes = max_episodes
 
         self.global_max_mean_score = 0
+        self.global_min_mean_loss = 1000000000
 
         self.local_scores = []
         self.local_losses = []
 
         self.score_dequeue = deque(maxlen=100)
+        self.loss_dequeue = deque(maxlen=100)
 
     # Q Network is 256-256-256-2 MLP
     def build_model(self, n_inputs, n_outputs):
@@ -264,19 +265,36 @@ class DQNAgent:
 
             self.local_losses.append(loss)
             self.local_scores.append(score)
+
             self.score_dequeue.append(score)
+            self.loss_dequeue.append(loss)
 
             ema_loss = exp_moving_average(self.local_losses, 10)[-1]
             ema_score = exp_moving_average(self.local_scores, 10)[-1]
-            mean_score_over_recent_100_episodes = np.mean(self.score_dequeue)
 
-            if self.global_max_mean_score < mean_score_over_recent_100_episodes:  # Worker에 의하여 더 좋은 Score를 찾음
-                self.global_max_mean_score = mean_score_over_recent_100_episodes
+            mean_score_over_recent_100_episodes = np.mean(self.score_dequeue)
+            mean_loss_over_recent_100_episodes = np.mean(self.loss_dequeue)
+
+            # if self.global_max_mean_score < mean_score_over_recent_100_episodes:  # Worker에 의하여 더 좋은 Score를 찾음
+            #     self.global_max_mean_score = mean_score_over_recent_100_episodes
+            #     send_weights = True
+            #
+            #     msg = ">>> Worker {0}: Find New Global Max Mean Score: {1:>4.2f}".format(
+            #         self.worker_idx,
+            #         self.global_max_mean_score
+            #     )
+            #     self.logger.info(msg)
+            #     if verbose: print(msg)
+            # else:
+            #     send_weights = False
+
+            if mean_loss_over_recent_100_episodes < self.global_min_mean_loss:  # Worker에 의하여 더 좋은 Score를 찾음
+                self.global_min_mean_loss = mean_loss_over_recent_100_episodes
                 send_weights = True
 
-                msg = ">>> Worker {0}: Find New Global Max Mean Score: {1:>4.2f}".format(
+                msg = ">>> Worker {0}: Find New Global Min Mean Loss: {1:>4.2f}".format(
                     self.worker_idx,
-                    self.global_max_mean_score
+                    self.global_min_mean_loss
                 )
                 self.logger.info(msg)
                 if verbose: print(msg)
@@ -287,6 +305,7 @@ class DQNAgent:
                 socket,
                 episode,
                 loss,
+                mean_loss_over_recent_100_episodes,
                 score,
                 mean_score_over_recent_100_episodes,
                 send_weights=send_weights
@@ -296,12 +315,13 @@ class DQNAgent:
                 time.sleep(1)
                 break
 
-            msg = "Worker {0}-Ep. {1:>2d}: Loss={2:6.4f} (EMA: {3:6.4f}), Score={4:5.1f} (EMA: {" \
-                  "5:>4.2f}, Mean: {6:>4.2f})".format(
+            msg = "Worker {0}-Ep. {1:>2d}: Loss={2:6.4f} (EMA: {3:6.4f}, Mean: {4:6,4f}), Score={5:5.1f} (EMA: {" \
+                  "6:>4.2f}, Mean: {7:>4.2f})".format(
                 self.worker_idx,
                 episode,
                 loss,
                 ema_loss,
+                mean_loss_over_recent_100_episodes,
                 score,
                 ema_score,
                 mean_score_over_recent_100_episodes,
@@ -330,7 +350,8 @@ class DQNAgent:
         # close the env and write monitor result info to disk
         self.env.close()
 
-    def send_episode_info_and_adapt_best_weights(self, socket, episode, loss, score, mean_score, send_weights):
+    def send_episode_info_and_adapt_best_weights(self, socket, episode, loss, mean_loss, score, mean_score,
+                                                 send_weights):
         if transfer:
             if send_weights:
                 weights = {}
@@ -348,6 +369,7 @@ class DQNAgent:
                 "episode": episode,
                 "worker_idx": self.worker_idx,
                 "loss": loss,
+                "mean_loss": mean_loss,
                 "score": score,
                 "mean_score": mean_score,
                 "weights": weights
@@ -371,12 +393,35 @@ class DQNAgent:
         continue_loop = True
         if episode_ack_msg["type"] == "episode_ack":
             if transfer:
-                global_max_mean_score = episode_ack_msg["global_max_mean_score"]
+                # global_max_mean_score = episode_ack_msg["global_max_mean_score"]
+                # best_weights = episode_ack_msg["best_weights"]
+                #
+                # if len(best_weights) > 0 and not send_weights: # Worker 스스로는 Best Score/weights 를 못 찾았지만 서버로 부터 Best
+                #     # Score/weights 를 받은 경우
+                #     self.global_max_mean_score = global_max_mean_score
+                #
+                #     for layer_id in range(num_weight_transfer_hidden_layers):
+                #         layer_name = "layer_{0}_{1}".format(
+                #             layer_id,
+                #             worker_idx
+                #         )
+                #         self.q_model.get_layer(name=layer_name).set_weights(best_weights[layer_id])
+                #
+                #     msg = ">>> Worker {0}: Set New Best Weights from Worker {1} to Local Model!!! - " \
+                #           "global_max_mean_score: {2}".format(
+                #         self.worker_idx,
+                #         episode_ack_msg["best_found_worker"],
+                #         self.global_max_mean_score
+                #     )
+                #     self.logger.info(msg)
+                #     if verbose: print(msg)
+
+                global_min_mean_loss = episode_ack_msg["global_min_mean_loss"]
                 best_weights = episode_ack_msg["best_weights"]
 
                 if len(best_weights) > 0 and not send_weights: # Worker 스스로는 Best Score/weights 를 못 찾았지만 서버로 부터 Best
                     # Score/weights 를 받은 경우
-                    self.global_max_mean_score = global_max_mean_score
+                    self.global_min_mean_loss = global_min_mean_loss
 
                     for layer_id in range(num_weight_transfer_hidden_layers):
                         layer_name = "layer_{0}_{1}".format(
@@ -386,10 +431,10 @@ class DQNAgent:
                         self.q_model.get_layer(name=layer_name).set_weights(best_weights[layer_id])
 
                     msg = ">>> Worker {0}: Set New Best Weights from Worker {1} to Local Model!!! - " \
-                          "global_max_score: {2}".format(
+                          "global_min_mean_loss: {2}".format(
                         self.worker_idx,
                         episode_ack_msg["best_found_worker"],
-                        self.global_max_mean_score
+                        self.global_min_mean_loss
                     )
                     self.logger.info(msg)
                     if verbose: print(msg)
@@ -430,6 +475,7 @@ class MultiDQN:
         self.scores = {}
         self.losses = {}
         self.global_max_mean_score = 0
+        self.global_min_mean_loss = 0
         self.best_weights = None
         self.best_found_worker = -1
 
@@ -494,7 +540,7 @@ def server_func(multi_dqn):
         sockets[worker_idx] = context.socket(zmq.REP)
         sockets[worker_idx].bind('tcp://127.0.0.1:' + str(10000 + worker_idx))
 
-    max_mean_score_notification_per_workers = 0
+    notification_per_workers = 0
     solved_notification_per_workers = 0
 
     while True:
@@ -515,44 +561,56 @@ def server_func(multi_dqn):
                     if transfer:
                         episode = episode_msg["episode"]
                         mean_score = episode_msg["mean_score"]
+                        mean_loss = episode_msg["mean_loss"]
 
                         if len(episode_msg["weights"]) > 0: # Worker로 부터 Best Weights를 수신 받음
-                            msg = ">>> Best Weights Found by Worker {0} at Episode {1}!!! - Last Global Max Mean " \
-                                  "Score: {2:4.1f}, New Global Max Mean Score: {3:4.1f}".format(
+                            # msg = ">>> Best Weights Found by Worker {0} at Episode {1}!!! - Last Global Max Mean " \
+                            #       "Score: {2:4.1f}, New Global Max Mean Score: {3:4.1f}".format(
+                            #     worker_idx,
+                            #     episode,
+                            #     multi_dqn.global_max_mean_score,
+                            #     mean_score
+                            # )
+                            msg = ">>> Best Weights Found by Worker {0} at Episode {1}!!! - Last Global Min Mean " \
+                                  "Loss: {2:4.1f}, New Global Min Mean Loss: {3:4.1f}".format(
                                 worker_idx,
                                 episode,
-                                multi_dqn.global_max_mean_score,
-                                mean_score
+                                multi_dqn.global_min_mean_loss,
+                                mean_loss
                             )
+
                             multi_dqn.log_info(msg)
                             if verbose: print(msg)
 
-                            multi_dqn.global_max_mean_score = mean_score
+                            # multi_dqn.global_max_mean_score = mean_score
+                            multi_dqn.global_min_mean_loss = mean_loss
                             multi_dqn.best_weights = episode_msg["weights"]
                             multi_dqn.best_found_worker = worker_idx
-                            max_mean_score_notification_per_workers = 1
+                            notification_per_workers = 1
 
                             episode_ack_msg = {
                                 "type": "episode_ack",
-                                "global_max_mean_score": multi_dqn.global_max_mean_score,
+                                # "global_max_mean_score": multi_dqn.global_max_mean_score,
+                                "global_min_mean_loss": multi_dqn.global_min_mean_loss,
                                 "best_weights": multi_dqn.best_weights,
                                 "best_found_worker": multi_dqn.best_found_worker
                             }
                             send_to_worker(sockets[worker_idx], episode_ack_msg)
 
                         else: # Worker로 부터 Best Weights를 수신 받지 못함
-                            max_mean_score_notification_per_workers += 1
+                            notification_per_workers += 1
 
                             episode_ack_msg = {
                                 "type": "episode_ack",
-                                "global_max_mean_score": multi_dqn.global_max_mean_score,
+                                # "global_max_mean_score": multi_dqn.global_max_mean_score,
+                                "global_min_mean_loss": multi_dqn.global_min_mean_loss,
                                 "best_weights": multi_dqn.best_weights,
                                 "best_found_worker": multi_dqn.best_found_worker
                             }
                             send_to_worker(sockets[worker_idx], episode_ack_msg)
 
-                            if max_mean_score_notification_per_workers == num_workers:
-                                max_mean_score_notification_per_workers = 0
+                            if notification_per_workers == num_workers:
+                                notification_per_workers = 0
                                 multi_dqn.best_weights = {}
                                 multi_dqn.best_found_worker = -1
                     else:
