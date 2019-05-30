@@ -572,7 +572,7 @@ def server_func(multi_dqn):
                             #     mean_score
                             # )
                             msg = ">>> Best Weights Found by Worker {0} at Episode {1}!!! - Last Global Min Mean " \
-                                  "Loss: {2:4.1f}, New Global Min Mean Loss: {3:4.1f}".format(
+                                  "Loss: {2:6.4f}, New Global Min Mean Loss: {3:6.4f}".format(
                                 worker_idx,
                                 episode,
                                 multi_dqn.global_min_mean_loss,
