@@ -35,8 +35,8 @@ import pickle
 import socket
 
 from numpy.random import seed
-seed(1)
-tf.random.set_seed(2)
+# seed(1)
+# tf.random.set_seed(2)
 
 import warnings
 warnings.filterwarnings("ignore")
@@ -89,7 +89,7 @@ class DQNAgent:
         self.tau = 0.3
 
         # learning rate
-        self.learning_rate = 0.0005
+        self.learning_rate = 0.001
 
         self.win_reward = win_reward
 
