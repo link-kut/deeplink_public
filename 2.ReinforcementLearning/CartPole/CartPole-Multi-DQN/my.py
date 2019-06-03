@@ -1,7 +1,5 @@
 # -*- coding: utf-8 -*-
 # https://github.com/openai/gym/wiki/CartPole-v0
-# https://medium.com/@tuzzer/cart-pole-balancing-with-q-learning-b54c6068d947
-
 import math
 import threading
 import time
@@ -12,17 +10,13 @@ from logger import get_logger
 import sys
 import json
 
-from tensorflow.python.keras.layers import Dropout
-#from tensorflow.keras.layers.normalization import BatchNormalization
-from tensorflow.python.keras.layers import LeakyReLU
-
 print(tf.__version__)
 # tf.config.gpu.set_per_process_memory_fraction(0.4)
 
-from tensorflow.python.keras.layers import Dense, Input
+from tensorflow.keras.layers import Dense, Input
 
-from tensorflow.python.keras.models import Model
-from tensorflow.python.keras.optimizers import Adam
+from tensorflow.keras.models import Model
+from tensorflow.keras.optimizers import Adam
 from collections import deque
 import numpy as np
 import random
@@ -32,7 +26,6 @@ import zmq
 import matplotlib.pyplot as plt
 import os
 import pickle
-import socket
 
 from numpy.random import seed
 seed(1)
@@ -45,11 +38,9 @@ ddqn = True
 num_hidden_layers = 3
 num_weight_transfer_hidden_layers = 4
 num_workers = 4
-score_based_transfer = True
-loss_based_transfer = False
-soft_transfer = True
+score_based_transfer = False
+loss_based_transfer = True
 verbose = False
-
 
 def exp_moving_average(values, window):
     """ Numpy implementation of EMA
@@ -74,26 +65,19 @@ class DQNAgent:
         self.action_space = self.env.action_space
 
         # experience buffer
-        self.memory = deque(maxlen=2000)
+        self.memory = []
 
         # discount rate
         self.gamma = 0.9
 
         # initially 90% exploration, 10% exploitation
-        self.epsilon = 0.5
+        self.epsilon = 1.0
 
         # iteratively applying decay til 10% exploration/90% exploitation
         self.epsilon_min = 0.0001
-        # self.epsilon_min = 0.001
 
         # coordinate the speed of epsilon decaying
         self.epsilon_coor = 0.3
-
-        # soft update target network
-        self.tau = 0.3
-
-        # learning rate
-        self.learning_rate = 0.0005
 
         self.win_reward = win_reward
 
@@ -103,14 +87,11 @@ class DQNAgent:
         self.weights_file = './dqn_cartpole.h5'
 
         # Q Network for training
-        self.n_inputs = int(self.env.observation_space.shape[0] / 2)
+        self.n_inputs = self.env.observation_space.shape[0]
         self.n_outputs = self.action_space.n
 
         self.q_model = self.build_model(self.n_inputs, self.n_outputs)
-        self.q_model.compile(
-            loss='mse',
-            optimizer=Adam(lr=self.learning_rate)
-        )
+        self.q_model.compile(loss='mse', optimizer=Adam())
 
         # target Q Network
         self.target_q_model = self.build_model(self.n_inputs, self.n_outputs)
@@ -136,8 +117,8 @@ class DQNAgent:
 
         self.max_episodes = max_episodes
 
-        self.global_max_ema_score = 0
-        self.global_min_ema_loss = 1000000000
+        self.global_max_mean_score = 0
+        self.global_min_mean_loss = 1000000000
 
         self.local_scores = []
         self.local_losses = []
@@ -149,35 +130,32 @@ class DQNAgent:
     def build_model(self, n_inputs, n_outputs):
         inputs = Input(shape=(n_inputs,), name='state_' + str(self.worker_idx))
         x = Dense(
-            units=128,
-            kernel_initializer='he_normal',
+            units=255,
+            kernel_initializer='glorot_normal',
             bias_initializer='zero',
+            activation='relu',
             name="layer_0_" + str(self.worker_idx)
         )(inputs)
 
-        x = LeakyReLU(alpha=0.05)(x)
-
         x = Dense(
-            units=128,
-            kernel_initializer='he_normal',
+            units=255,
+            kernel_initializer='glorot_normal',
             bias_initializer='zero',
+            activation='relu',
             name="layer_1_" + str(self.worker_idx)
         )(x)
 
-        x = LeakyReLU(alpha=0.05)(x)
-
         x = Dense(
-            units=128,
-            kernel_initializer='he_normal',
+            units=255,
+            kernel_initializer='glorot_normal',
             bias_initializer='zero',
+            activation='relu',
             name="layer_2_" + str(self.worker_idx)
         )(x)
 
-        x = LeakyReLU(alpha=0.05)(x)
-
         x = Dense(
             units=n_outputs,
-            kernel_initializer='he_normal',
+            kernel_initializer='glorot_normal',
             bias_initializer='zero',
             activation='linear',
             name='layer_3_' + str(self.worker_idx)
@@ -192,34 +170,22 @@ class DQNAgent:
         self.q_model.save_weights(self.weights_file)
 
     # copy trained Q Network params to target Q Network
-    def update_target_model_weights(self, soft=False):
-        if soft:
-            pars_behavior = self.q_model.get_weights()  # these have form [W1, b1, W2, b2, ..], Wi = weights of layer i
-            pars_target = self.target_q_model.get_weights()  # bi = biases in layer i
-
-            ctr = 0
-            for par_behavior, par_target in zip(pars_behavior, pars_target):
-                par_target = par_target * (1 - self.tau) + par_behavior * self.tau
-                pars_target[ctr] = par_target
-                ctr += 1
-
-            self.target_q_model.set_weights(pars_target)
-        else:
-            self.target_q_model.set_weights(
-                self.q_model.get_weights()
-            )
+    def update_target_model_weights(self):
+        self.target_q_model.set_weights(
+            self.q_model.get_weights()
+        )
 
     # eps-greedy policy
     def act(self, state):
         if np.random.rand() < self.epsilon:
             # explore - do random action
             return self.action_space.sample(), True
-        else:
-            # exploit
-            q_values = self.q_model.predict(state)
 
-            # select the action with max Q-value
-            return np.argmax(q_values[0]), False
+        # exploit
+        q_values = self.q_model.predict(state)
+
+        # select the action with max Q-value
+        return np.argmax(q_values[0]), False
 
     # store experiences in the replay buffer
     def remember(self, state, action, reward, next_state, done):
@@ -297,27 +263,20 @@ class DQNAgent:
         return loss
 
     # decrease the exploration, increase exploitation
-    # def update_epsilon(self, episode):
-    #     if episode != 0:
-    #         #epsilon_decay = (self.epsilon_min / self.epsilon) ** (0.2 / float(episode))
-    #         epsilon_decay = 0.99
-    #
-    #         if self.epsilon > self.epsilon_min:
-    #             self.epsilon *= epsilon_decay
-
     def update_epsilon(self, episode):
         if episode != 0:
-            epsilon_decay = (self.epsilon_coor ** (episode / 50) / self.epsilon) ** (1. / float(episode))
+            epsilon_decay = (self.epsilon_coor**(episode/50) / self.epsilon) ** (1. / float(episode))
 
             if self.epsilon > self.epsilon_min:
                 self.epsilon *= epsilon_decay
 
-        if episode > 150:
+        if episode > 180:
             self.epsilon = 0.0001
+
 
     def start_rl(self, socket):
         # should be solved in this number of episodes
-        state_size = int(self.env.observation_space.shape[0] / 2)
+        state_size = self.env.observation_space.shape[0]
         batch_size = 64
 
         # by default, CartPole-v0 has max episode steps = 200
@@ -326,7 +285,7 @@ class DQNAgent:
 
         # Q-Learning sampling and fitting
         for episode in range(self.max_episodes):
-            state = self.env.reset()[2:4]
+            state = self.env.reset()
             state = np.reshape(state, [1, state_size])
             done = False
             total_reward = 0
@@ -341,8 +300,6 @@ class DQNAgent:
 
                 next_state, reward, done, _ = self.env.step(action)
 
-                next_state = next_state[2:4]
-
                 # in CartPole-v0:
                 # state = [pos, vel, theta, angular speed]
                 next_state = np.reshape(next_state, [1, state_size])
@@ -353,110 +310,104 @@ class DQNAgent:
                 total_reward += reward
 
             if len(self.memory) < batch_size:
-                msg = "Worker {0}-Ep.{1:>2d}: Memory Length: {2}, Has_Rand_Act:{3}".format(
+                continue
+
+            # call experience relay
+            loss = self.replay(batch_size, episode)
+            score = total_reward
+
+            self.local_losses.append(loss)
+            self.local_scores.append(score)
+
+            self.score_dequeue.append(score)
+            self.loss_dequeue.append(loss)
+
+            ema_loss = exp_moving_average(self.local_losses, 10)[-1]
+            ema_score = exp_moving_average(self.local_scores, 10)[-1]
+
+            mean_score_over_recent_100_episodes = np.mean(self.score_dequeue)
+            mean_loss_over_recent_100_episodes = np.mean(self.loss_dequeue)
+
+            send_weights = False
+            # Worker에 의하여 더 높은 Score를 찾음
+            if episode > 10 and score_based_transfer and self.global_max_mean_score < mean_score_over_recent_100_episodes:
+                self.global_max_mean_score = mean_score_over_recent_100_episodes
+                send_weights = True
+                self.update_target_model_weights()
+
+                msg = ">>> Worker {0}: Find New Global Max Mean Score: {1:>4.2f}".format(
                     self.worker_idx,
-                    episode,
-                    len(self.memory),
-                    has_random_action
+                    self.global_max_mean_score
                 )
                 self.logger.info(msg)
                 if verbose: print(msg)
-            else:
-                # call experience relay
-                loss = self.replay(batch_size, episode)
-                score = total_reward
 
-                self.local_losses.append(loss)
-                self.local_scores.append(score)
+            # Worker에 의하여 더 낮은 Loss를 찾음
+            if episode > 10 and loss_based_transfer and mean_loss_over_recent_100_episodes < self.global_min_mean_loss:
+                self.global_min_mean_loss = mean_loss_over_recent_100_episodes
+                send_weights = True
+                self.update_target_model_weights()
 
-                self.score_dequeue.append(score)
-                self.loss_dequeue.append(loss)
+                msg = ">>> Worker {0}: Find New Global Min Mean Loss: {1:>6.4f}".format(
+                    self.worker_idx,
+                    self.global_min_mean_loss
+                )
+                self.logger.info(msg)
+                if verbose: print(msg)
 
-                ema_loss = exp_moving_average(self.local_losses, 10)[-1]
-                ema_score = exp_moving_average(self.local_scores, 10)[-1]
+            continue_loop = self.send_episode_info_and_adapt_best_weights(
+                socket,
+                episode,
+                loss,
+                mean_loss_over_recent_100_episodes,
+                score,
+                mean_score_over_recent_100_episodes,
+                send_weights=send_weights
+            )
 
-                mean_score_over_recent_100_episodes = np.mean(self.score_dequeue)
-                mean_loss_over_recent_100_episodes = np.mean(self.loss_dequeue)
+            if not continue_loop:
+                time.sleep(1)
+                break
 
-                send_weights = False
-                # Worker에 의하여 더 높은 Score를 찾음
-                if episode > 10 and score_based_transfer and self.global_max_ema_score < ema_score:
-                    self.global_max_ema_score = ema_score
-                    send_weights = True
-                    self.update_target_model_weights()
+            msg = "Worker {0}-Ep. {1:>2d}: Loss={2:6.4f} (EMA: {3:6.4f}, Mean: {4:6.4f}), Score={5:5.1f} (EMA: {" \
+                  "6:>4.2f}, Mean: {7:>4.2f}), Epsilon: {8:>6.4f}, Has_Random_action: {9}".format(
+                self.worker_idx,
+                episode,
+                loss,
+                ema_loss,
+                mean_loss_over_recent_100_episodes,
+                score,
+                ema_score,
+                mean_score_over_recent_100_episodes,
+                self.epsilon,
+                has_random_action
+            )
 
-                    msg = ">>> Worker {0}: Find New Global Max EMA Score: {1:>4.2f}".format(
-                        self.worker_idx,
-                        self.global_max_ema_score
-                    )
-                    self.logger.info(msg)
-                    if verbose: print(msg)
+            self.logger.info(msg)
+            if verbose: print(msg)
 
-                # Worker에 의하여 더 낮은 Loss를 찾음
-                if episode > 10 and loss_based_transfer and ema_loss < self.global_min_ema_loss:
-                    self.global_min_ema_loss = ema_loss
-                    send_weights = True
-                    self.update_target_model_weights()
+            if mean_score_over_recent_100_episodes >= self.win_reward:
+                msg = "******* Worker {0} - Solved in episode {1}: Mean score = {2} - Epsilon: {3}".format(
+                    self.worker_idx,
+                    episode,
+                    ema_score,
+                    self.epsilon
+                )
+                self.logger.info(msg)
+                print(msg)
 
-                    msg = ">>> Worker {0}: Find New Global Min EMA Loss: {1:>6.4f}".format(
-                        self.worker_idx,
-                        self.global_min_ema_loss
-                    )
-                    self.logger.info(msg)
-                    if verbose: print(msg)
-
-                continue_loop = self.send_episode_info_and_adapt_best_weights(
+                self.save_weights()
+                self.send_solve_info(
                     socket,
-                    episode,
-                    loss,
-                    ema_loss,
-                    score,
-                    ema_score,
-                    send_weights=send_weights
+                    last_episode=episode
                 )
-
-                if not continue_loop:
-                    time.sleep(1)
-                    break
-
-                msg = "Worker {0}-Ep.{1:>2d}: Loss={2:6.4f} (EMA: {3:6.4f}, Mean: {4:6.4f}), Score={5:5.1f} (EMA: {" \
-                      "6:>4.2f}, Mean: {7:>4.2f}), Epsilon: {8:>6.4f}, Has_Rand_Act:{9}".format(
-                    self.worker_idx,
-                    episode,
-                    loss,
-                    ema_loss,
-                    mean_loss_over_recent_100_episodes,
-                    score,
-                    ema_score,
-                    mean_score_over_recent_100_episodes,
-                    self.epsilon,
-                    has_random_action
-                )
-
-                self.logger.info(msg)
-                if verbose: print(msg)
-
-                if mean_score_over_recent_100_episodes >= self.win_reward:
-                    msg = "******* Worker {0} - Solved in episode {1}: Mean score = {2} - Epsilon: {3}".format(
-                        self.worker_idx,
-                        episode,
-                        mean_score_over_recent_100_episodes,
-                        self.epsilon
-                    )
-                    self.logger.info(msg)
-                    print(msg)
-
-                    self.save_weights()
-                    self.send_solve_info(
-                        socket,
-                        last_episode=episode
-                    )
-                    break
+                break
 
         # close the env and write monitor result info to disk
         self.env.close()
 
-    def send_episode_info_and_adapt_best_weights(self, socket, episode, loss, ema_loss, score, ema_score, send_weights):
+    def send_episode_info_and_adapt_best_weights(self, socket, episode, loss, mean_loss, score, mean_score,
+                                                 send_weights):
         if score_based_transfer or loss_based_transfer:
             if send_weights:
                 weights = {}
@@ -474,9 +425,9 @@ class DQNAgent:
                 "episode": episode,
                 "worker_idx": self.worker_idx,
                 "loss": loss,
-                "ema_loss": ema_loss,
+                "mean_loss": mean_loss,
                 "score": score,
-                "ema_score": ema_score,
+                "mean_score": mean_score,
                 "weights": weights
             }
         else:
@@ -498,12 +449,12 @@ class DQNAgent:
         continue_loop = True
         if episode_ack_msg["type"] == "episode_ack":
             if score_based_transfer:
-                global_max_ema_score = episode_ack_msg["global_max_ema_score"]
+                global_max_mean_score = episode_ack_msg["global_max_mean_score"]
                 best_weights = episode_ack_msg["best_weights"]
 
                 if best_weights is not None and len(best_weights) > 0 and not send_weights:
                     # Worker 스스로는 Best Score/Weights 를 못 찾았지만 서버로 부터 Best Score/weights 를 받은 경우
-                    self.global_max_ema_score = global_max_ema_score
+                    self.global_max_mean_score = global_max_mean_score
 
                     for layer_id in range(num_weight_transfer_hidden_layers):
                         layer_name = "layer_{0}_{1}".format(
@@ -511,25 +462,24 @@ class DQNAgent:
                             worker_idx
                         )
                         self.q_model.get_layer(name=layer_name).set_weights(best_weights[layer_id])
+                        self.update_target_model_weights()
 
-                    self.update_target_model_weights()
-
-                    msg = ">>> Worker {0}: Receive New Best Weights from Worker {1} and Set Them to Local Model!!! - " \
-                          "global_max_ema_score: {2}".format(
+                    msg = ">>> Worker {0}: Set New Best Weights from Worker {1} to Local Model!!! - " \
+                          "global_max_mean_score: {2}".format(
                         self.worker_idx,
                         episode_ack_msg["best_found_worker"],
-                        self.global_max_ema_score
+                        self.global_max_mean_score
                     )
                     self.logger.info(msg)
                     if verbose: print(msg)
 
             if loss_based_transfer:
-                global_min_ema_loss = episode_ack_msg["global_min_ema_loss"]
+                global_min_mean_loss = episode_ack_msg["global_min_mean_loss"]
                 best_weights = episode_ack_msg["best_weights"]
 
                 if best_weights is not None and len(best_weights) > 0 and not send_weights:
                     # Worker 스스로는 Best Score/weights 를 못 찾았지만 서버로 부터 Best Score/weights 를 받은 경우
-                    self.global_min_ema_loss = global_min_ema_loss
+                    self.global_min_mean_loss = global_min_mean_loss
 
                     for layer_id in range(num_weight_transfer_hidden_layers):
                         layer_name = "layer_{0}_{1}".format(
@@ -540,11 +490,11 @@ class DQNAgent:
 
                     self.update_target_model_weights()
 
-                    msg = ">>> Worker {0}: Receive New Best Weights from Worker {1} and Set Them to Local Model!!! - " \
-                          "global_min_ema_loss: {2:6.4f}".format(
+                    msg = ">>> Worker {0}: Set New Best Weights from Worker {1} to Local Model!!! - " \
+                          "global_min_mean_loss: {2:6.4f}".format(
                         self.worker_idx,
                         episode_ack_msg["best_found_worker"],
-                        self.global_min_ema_loss
+                        self.global_min_mean_loss
                     )
                     self.logger.info(msg)
                     if verbose: print(msg)
@@ -569,21 +519,6 @@ class DQNAgent:
         solve_msg = zlib.compress(solve_msg)
         socket.send(solve_msg)
 
-    def transfer_update(self, best_weights):
-        for layer_id in range(num_weight_transfer_hidden_layers):
-            layer_name = "layer_{0}_{1}".format(
-                layer_id,
-                worker_idx
-            )
-            if soft_transfer:
-                par_original = self.q_model.get_layer(name=layer_name).get_weights()
-                par_updated = par_original * self.tau + best_weights[layer_id] * (1 - self.tau)
-                self.q_model.get_layer(name=layer_name).set_weights(par_updated)
-            else:
-                self.q_model.get_layer(name=layer_name).set_weights(best_weights[layer_id])
-
-        self.update_target_model_weights()
-
 
 def worker_func(worker_idx, env_id, win_reward, loss_trials, max_episodes, port):
     context = zmq.Context()
@@ -601,8 +536,8 @@ class MultiDQN:
         self.losses = {}
         self.weight_update_episodes = []
 
-        self.global_max_ema_score = 0
-        self.global_min_ema_loss = 0
+        self.global_max_mean_score = 0
+        self.global_min_mean_loss = 0
         self.best_weights = None
         self.best_found_worker = -1
 
@@ -675,7 +610,6 @@ def server_func(multi_dqn):
     for worker_idx in range(num_workers):
         sockets[worker_idx] = context.socket(zmq.REP)
         sockets[worker_idx].bind('tcp://127.0.0.1:' + str(10000 + worker_idx))
-        #sockets[worker_idx].setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
 
     notification_per_workers = 0
     solved_notification_per_workers = 0
@@ -697,30 +631,30 @@ def server_func(multi_dqn):
                 if multi_dqn.continue_loop:
                     if score_based_transfer or loss_based_transfer:
                         episode = episode_msg["episode"]
-                        ema_score = episode_msg["ema_score"]
-                        ema_loss = episode_msg["ema_loss"]
+                        mean_score = episode_msg["mean_score"]
+                        mean_loss = episode_msg["mean_loss"]
 
                         if len(episode_msg["weights"]) > 0: # Worker로 부터 Best Weights를 수신 받음
                             multi_dqn.weight_update_episodes.append(episode)
                             if score_based_transfer:
-                                msg = ">>> Best Weights Found by Worker {0} at Episode {1}!!! - Last Global Max EMA " \
-                                      "Score: {2:4.1f}, New Global Max EMA Score: {3:4.1f}".format(
+                                msg = ">>> Best Weights Found by Worker {0} at Episode {1}!!! - Last Global Max Mean " \
+                                      "Score: {2:4.1f}, New Global Max Mean Score: {3:4.1f}".format(
                                     worker_idx,
                                     episode,
-                                    multi_dqn.global_max_ema_score,
-                                    ema_score
+                                    multi_dqn.global_max_mean_score,
+                                    mean_score
                                 )
-                                multi_dqn.global_max_ema_score = ema_score
+                                multi_dqn.global_max_mean_score = mean_score
 
                             if loss_based_transfer:
-                                msg = ">>> Best Weights Found by Worker {0} at Episode {1}!!! - Last Global Min EMA " \
-                                      "Loss: {2:6.4f}, New Global Min EMA Loss: {3:6.4f}".format(
+                                msg = ">>> Best Weights Found by Worker {0} at Episode {1}!!! - Last Global Min Mean " \
+                                      "Loss: {2:6.4f}, New Global Min Mean Loss: {3:6.4f}".format(
                                     worker_idx,
                                     episode,
-                                    multi_dqn.global_min_ema_loss,
-                                    ema_loss
+                                    multi_dqn.global_min_mean_loss,
+                                    mean_loss
                                 )
-                                multi_dqn.global_min_ema_loss = ema_loss
+                                multi_dqn.global_min_mean_loss = mean_loss
 
                             multi_dqn.log_info(msg)
                             if verbose: print(msg)
@@ -732,14 +666,14 @@ def server_func(multi_dqn):
                             if score_based_transfer:
                                 episode_ack_msg = {
                                     "type": "episode_ack",
-                                    "global_max_ema_score": multi_dqn.global_max_ema_score,
+                                    "global_max_mean_score": multi_dqn.global_max_mean_score,
                                     "best_weights": multi_dqn.best_weights,
                                     "best_found_worker": multi_dqn.best_found_worker
                                 }
                             else:
                                 episode_ack_msg = {
                                     "type": "episode_ack",
-                                    "global_min_ema_loss": multi_dqn.global_min_ema_loss,
+                                    "global_min_mean_loss": multi_dqn.global_min_mean_loss,
                                     "best_weights": multi_dqn.best_weights,
                                     "best_found_worker": multi_dqn.best_found_worker
                                 }
@@ -752,14 +686,14 @@ def server_func(multi_dqn):
                             if score_based_transfer:
                                 episode_ack_msg = {
                                     "type": "episode_ack",
-                                    "global_max_ema_score": multi_dqn.global_max_ema_score,
+                                    "global_max_mean_score": multi_dqn.global_max_mean_score,
                                     "best_weights": multi_dqn.best_weights,
                                     "best_found_worker": multi_dqn.best_found_worker
                                 }
                             else:
                                 episode_ack_msg = {
                                     "type": "episode_ack",
-                                    "global_min_ema_loss": multi_dqn.global_min_ema_loss,
+                                    "global_min_mean_loss": multi_dqn.global_min_mean_loss,
                                     "best_weights": multi_dqn.best_weights,
                                     "best_found_worker": multi_dqn.best_found_worker
                                 }
