@@ -296,24 +296,24 @@ class DQNAgent:
 
         return loss
 
-    # decrease the exploration, increase exploitation
-    # def update_epsilon(self, episode):
-    #     if episode != 0:
-    #         #epsilon_decay = (self.epsilon_min / self.epsilon) ** (0.2 / float(episode))
-    #         epsilon_decay = 0.99
-    #
-    #         if self.epsilon > self.epsilon_min:
-    #             self.epsilon *= epsilon_decay
-
+    #decrease the exploration, increase exploitation
     def update_epsilon(self, episode):
         if episode != 0:
-            epsilon_decay = (self.epsilon_coor ** (episode / 50) / self.epsilon) ** (1. / float(episode))
+            #epsilon_decay = (self.epsilon_min / self.epsilon) ** (0.2 / float(episode))
+            epsilon_decay = 0.99
 
             if self.epsilon > self.epsilon_min:
                 self.epsilon *= epsilon_decay
 
-        if episode > 150:
-            self.epsilon = 0.0001
+    # def update_epsilon(self, episode):
+    #     if episode != 0:
+    #         epsilon_decay = (self.epsilon_coor ** (episode / 50) / self.epsilon) ** (1. / float(episode))
+    #
+    #         if self.epsilon > self.epsilon_min:
+    #             self.epsilon *= epsilon_decay
+    #
+    #     if episode > 150:
+    #         self.epsilon = 0.0001
 
     def start_rl(self, socket):
         # should be solved in this number of episodes
