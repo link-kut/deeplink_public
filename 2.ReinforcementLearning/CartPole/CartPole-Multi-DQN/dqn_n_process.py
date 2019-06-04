@@ -45,7 +45,7 @@ ddqn = True
 num_hidden_layers = 3
 num_weight_transfer_hidden_layers = 4
 num_workers = 4
-score_based_transfer = False
+score_based_transfer = True
 loss_based_transfer = False
 soft_transfer = True
 verbose = False
@@ -405,7 +405,7 @@ class DQNAgent:
                     self.logger.info(msg)
                     if verbose: print(msg)
 
-                continue_loop = self.send_episode_info_and_adapt_best_weights(
+                self.send_episode_info_and_adapt_best_weights(
                     socket,
                     episode,
                     loss,
@@ -414,10 +414,6 @@ class DQNAgent:
                     ema_score,
                     send_weights=send_weights
                 )
-
-                if not continue_loop:
-                    time.sleep(1)
-                    break
 
                 msg = "Worker {0}-Ep.{1:>2d}: Loss={2:6.4f} (EMA: {3:6.4f}, Mean: {4:6.4f}), Score={5:5.1f} (EMA: {" \
                       "6:>4.2f}, Mean: {7:>4.2f}), Epsilon: {8:>6.4f}, Has_Rand_Act:{9}".format(
@@ -497,7 +493,6 @@ class DQNAgent:
         episode_ack_msg = zlib.decompress(episode_ack_msg)
         episode_ack_msg = pickle.loads(episode_ack_msg)
 
-        continue_loop = True
         if episode_ack_msg["type"] == "episode_ack":
             if score_based_transfer:
                 global_max_ema_score = episode_ack_msg["global_max_ema_score"]
@@ -552,16 +547,8 @@ class DQNAgent:
                     if verbose: print(msg)
             else:
                 pass
-        elif episode_ack_msg["type"] == "solved_ack":
-            if score_based_transfer or loss_based_transfer:
-                msg = "Solved by Other Worker"
-                self.logger.info(msg)
-                if verbose: print(msg)
-                continue_loop = False
         else:
             pass
-
-        return continue_loop
 
     def send_solve_info(self, socket, last_episode):
         solve_msg = {
@@ -663,43 +650,6 @@ class MultiDQN:
         plt.savefig("./graphs/loss_score.png")
         plt.close('all')
 
-    # def save_graph(self):
-    #     plt.clf()
-    #
-    #     f, axarr = plt.subplots(nrows=num_workers, ncols=2, sharex=True)
-    #     f.subplots_adjust(hspace=0.25)
-    #
-    #     min_size = sys.maxsize
-    #
-    #     for worker_idx in range(num_workers):
-    #         if len(self.losses[worker_idx]) < min_size:
-    #             min_size = len(self.losses[worker_idx])
-    #         if len(self.scores[worker_idx]) < min_size:
-    #             min_size = len(self.scores[worker_idx])
-    #
-    #     for worker_idx in range(num_workers):
-    #         losses = self.losses[worker_idx][0:min_size]
-    #
-    #         axarr[worker_idx][0].plot(range(min_size), losses, 'b')
-    #         axarr[worker_idx][0].plot(range(min_size), exp_moving_average(self.losses[worker_idx], 10)[0:min_size],
-    #                                   'r')
-    #         # axarr[worker_idx][0].legend(["Loss", "Loss_EMA"])
-    #
-    #         scores = self.scores[worker_idx][0:min_size]
-    #         axarr[worker_idx][1].plot(range(min_size), scores, 'b')
-    #         axarr[worker_idx][1].plot(range(min_size), exp_moving_average(self.scores[worker_idx], 10)[0:min_size],
-    #                                   'r')
-    #         # axarr[worker_idx][1].legend(["Score", "Score_EMA"])
-    #
-    #         # axarr[worker_idx][1].scatter(
-    #         #     x=self.weight_update_episodes,
-    #         #     y=np.ndarray(scores)[self.weight_update_episodes],
-    #         #     s=10
-    #         # )
-    #
-    #     plt.savefig("./graphs/loss_score.png")
-    #     plt.close('all')
-
     def log_info(self, msg):
         self.global_logger.info(msg)
 
@@ -711,11 +661,8 @@ def server_func(multi_dqn):
     for worker_idx in range(num_workers):
         sockets[worker_idx] = context.socket(zmq.REP)
         sockets[worker_idx].bind('tcp://127.0.0.1:' + str(10000 + worker_idx))
-        #sockets[worker_idx].setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
 
     notification_per_workers = 0
-    solved_notification_per_workers = 0
-
     solved_workers = []
 
     while True:
@@ -735,94 +682,88 @@ def server_func(multi_dqn):
                 multi_dqn.update_loss(episode_msg["worker_idx"], loss=episode_msg["loss"])
                 multi_dqn.update_score(episode_msg["worker_idx"], score=episode_msg["score"])
 
-                if multi_dqn.continue_loop:
-                    if score_based_transfer or loss_based_transfer:
-                        episode = episode_msg["episode"]
-                        ema_score = episode_msg["ema_score"]
-                        ema_loss = episode_msg["ema_loss"]
 
-                        if len(episode_msg["weights"]) > 0: # Worker로 부터 Best Weights를 수신 받음
-                            multi_dqn.weight_update_episodes.append(episode)
-                            if score_based_transfer:
-                                msg = ">>> Best Weights Found by Worker {0} at Episode {1}!!! - Last Global Max EMA " \
-                                      "Score: {2:4.1f}, New Global Max EMA Score: {3:4.1f}".format(
-                                    worker_idx,
-                                    episode,
-                                    multi_dqn.global_max_ema_score,
-                                    ema_score
-                                )
-                                multi_dqn.global_max_ema_score = ema_score
+                if score_based_transfer or loss_based_transfer:
+                    episode = episode_msg["episode"]
+                    ema_score = episode_msg["ema_score"]
+                    ema_loss = episode_msg["ema_loss"]
 
-                            if loss_based_transfer:
-                                msg = ">>> Best Weights Found by Worker {0} at Episode {1}!!! - Last Global Min EMA " \
-                                      "Loss: {2:6.4f}, New Global Min EMA Loss: {3:6.4f}".format(
-                                    worker_idx,
-                                    episode,
-                                    multi_dqn.global_min_ema_loss,
-                                    ema_loss
-                                )
-                                multi_dqn.global_min_ema_loss = ema_loss
+                    if len(episode_msg["weights"]) > 0: # Worker로 부터 Best Weights를 수신 받음
+                        multi_dqn.weight_update_episodes.append(episode)
+                        if score_based_transfer:
+                            msg = ">>> Best Weights Found by Worker {0} at Episode {1}!!! - Last Global Max EMA " \
+                                  "Score: {2:4.1f}, New Global Max EMA Score: {3:4.1f}".format(
+                                worker_idx,
+                                episode,
+                                multi_dqn.global_max_ema_score,
+                                ema_score
+                            )
+                            multi_dqn.global_max_ema_score = ema_score
 
-                            multi_dqn.log_info(msg)
-                            if verbose: print(msg)
+                        if loss_based_transfer:
+                            msg = ">>> Best Weights Found by Worker {0} at Episode {1}!!! - Last Global Min EMA " \
+                                  "Loss: {2:6.4f}, New Global Min EMA Loss: {3:6.4f}".format(
+                                worker_idx,
+                                episode,
+                                multi_dqn.global_min_ema_loss,
+                                ema_loss
+                            )
+                            multi_dqn.global_min_ema_loss = ema_loss
 
-                            multi_dqn.best_weights = episode_msg["weights"]
-                            multi_dqn.best_found_worker = worker_idx
-                            notification_per_workers = 1
+                        multi_dqn.log_info(msg)
+                        if verbose: print(msg)
 
-                            if score_based_transfer:
-                                episode_ack_msg = {
-                                    "type": "episode_ack",
-                                    "global_max_ema_score": multi_dqn.global_max_ema_score,
-                                    "best_weights": multi_dqn.best_weights,
-                                    "best_found_worker": multi_dqn.best_found_worker
-                                }
-                            else:
-                                episode_ack_msg = {
-                                    "type": "episode_ack",
-                                    "global_min_ema_loss": multi_dqn.global_min_ema_loss,
-                                    "best_weights": multi_dqn.best_weights,
-                                    "best_found_worker": multi_dqn.best_found_worker
-                                }
+                        multi_dqn.best_weights = episode_msg["weights"]
+                        multi_dqn.best_found_worker = worker_idx
+                        notification_per_workers = 1
 
-                            send_to_worker(sockets[worker_idx], episode_ack_msg)
+                        if score_based_transfer:
+                            episode_ack_msg = {
+                                "type": "episode_ack",
+                                "global_max_ema_score": multi_dqn.global_max_ema_score,
+                                "best_weights": multi_dqn.best_weights,
+                                "best_found_worker": multi_dqn.best_found_worker
+                            }
+                        else:
+                            episode_ack_msg = {
+                                "type": "episode_ack",
+                                "global_min_ema_loss": multi_dqn.global_min_ema_loss,
+                                "best_weights": multi_dqn.best_weights,
+                                "best_found_worker": multi_dqn.best_found_worker
+                            }
 
-                        else: # Worker로 부터 Best Weights를 수신 받지 못함
-                            notification_per_workers += 1
-
-                            if score_based_transfer:
-                                episode_ack_msg = {
-                                    "type": "episode_ack",
-                                    "global_max_ema_score": multi_dqn.global_max_ema_score,
-                                    "best_weights": multi_dqn.best_weights,
-                                    "best_found_worker": multi_dqn.best_found_worker
-                                }
-                            else:
-                                episode_ack_msg = {
-                                    "type": "episode_ack",
-                                    "global_min_ema_loss": multi_dqn.global_min_ema_loss,
-                                    "best_weights": multi_dqn.best_weights,
-                                    "best_found_worker": multi_dqn.best_found_worker
-                                }
-                            send_to_worker(sockets[worker_idx], episode_ack_msg)
-
-                            if notification_per_workers == num_workers:
-                                notification_per_workers = 0
-                                multi_dqn.best_weights = {}
-                                multi_dqn.best_found_worker = -1
-                    else:
-                        episode_ack_msg = {
-                            "type": "episode_ack"
-                        }
                         send_to_worker(sockets[worker_idx], episode_ack_msg)
+
+                    else: # Worker로 부터 Best Weights를 수신 받지 못함
+                        notification_per_workers += 1
+
+                        if score_based_transfer:
+                            episode_ack_msg = {
+                                "type": "episode_ack",
+                                "global_max_ema_score": multi_dqn.global_max_ema_score,
+                                "best_weights": multi_dqn.best_weights,
+                                "best_found_worker": multi_dqn.best_found_worker
+                            }
+                        else:
+                            episode_ack_msg = {
+                                "type": "episode_ack",
+                                "global_min_ema_loss": multi_dqn.global_min_ema_loss,
+                                "best_weights": multi_dqn.best_weights,
+                                "best_found_worker": multi_dqn.best_found_worker
+                            }
+                        send_to_worker(sockets[worker_idx], episode_ack_msg)
+
+                        if notification_per_workers == num_workers:
+                            notification_per_workers = 0
+                            multi_dqn.best_weights = {}
+                            multi_dqn.best_found_worker = -1
                 else:
-                    solved_notification_per_workers += 1
                     episode_ack_msg = {
-                        "type": "solved_ack"
+                        "type": "episode_ack"
                     }
                     send_to_worker(sockets[worker_idx], episode_ack_msg)
-            elif episode_msg["type"] == "solved":
 
+            elif episode_msg["type"] == "solved":
                 solved_workers.append(int(episode_msg["worker_idx"]))
 
                 msg = "SOLVED!!! - Last Episode: {0} by {1} {2}".format(
@@ -833,14 +774,10 @@ def server_func(multi_dqn):
                 multi_dqn.log_info(msg)
                 if verbose: print(msg)
 
-                if score_based_transfer or loss_based_transfer:
-                    solved_notification_per_workers = 1
-                    multi_dqn.continue_loop = False
+                multi_dqn.global_max_ema_score = 0
+
             else:
                 pass
-
-        if solved_notification_per_workers == num_workers:
-            break
 
 
 def send_to_worker(socket, episode_ack_msg):
@@ -854,7 +791,7 @@ if __name__ == '__main__':
     # the cart pole has not fallen over and it has achieved an average reward of 195.0.
     # a reward of +1 is provided for every timestep the pole remains
     # upright
-    win_reward = 195.0
+    win_reward = 120.0
 
     # loss
     loss_trials = 10
