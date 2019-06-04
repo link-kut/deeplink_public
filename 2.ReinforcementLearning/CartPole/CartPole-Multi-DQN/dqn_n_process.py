@@ -45,7 +45,7 @@ ddqn = True
 num_hidden_layers = 3
 num_weight_transfer_hidden_layers = 4
 num_workers = 4
-score_based_transfer = True
+score_based_transfer = False
 loss_based_transfer = False
 soft_transfer = True
 verbose = False
@@ -447,10 +447,12 @@ class DQNAgent:
                     print(msg)
 
                     self.save_weights()
+
                     self.send_solve_info(
                         socket,
                         last_episode=episode
                     )
+
                     break
 
         # close the env and write monitor result info to disk
@@ -550,11 +552,12 @@ class DQNAgent:
                     if verbose: print(msg)
             else:
                 pass
-        elif episode_ack_msg["type"] == "solved":
-            msg = "Solved by Other Worker"
-            self.logger.info(msg)
-            if verbose: print(msg)
-            continue_loop = False
+        elif episode_ack_msg["type"] == "solved_ack":
+            if score_based_transfer or loss_based_transfer:
+                msg = "Solved by Other Worker"
+                self.logger.info(msg)
+                if verbose: print(msg)
+                continue_loop = False
         else:
             pass
 
@@ -563,6 +566,7 @@ class DQNAgent:
     def send_solve_info(self, socket, last_episode):
         solve_msg = {
             "type": "solved",
+            "worker_idx": self.worker_idx,
             "last_episode": last_episode
         }
         solve_msg = pickle.dumps(solve_msg, protocol=-1)
@@ -633,36 +637,68 @@ class MultiDQN:
         f, axarr = plt.subplots(nrows=num_workers, ncols=2, sharex=True)
         f.subplots_adjust(hspace=0.25)
 
-        min_size = sys.maxsize
-
         for worker_idx in range(num_workers):
-            if len(self.losses[worker_idx]) < min_size:
-                min_size = len(self.losses[worker_idx])
-            if len(self.scores[worker_idx]) < min_size:
-                min_size = len(self.scores[worker_idx])
+            axarr[worker_idx][0].plot(
+                range(len(self.losses[worker_idx])),
+                self.losses[worker_idx],
+                'b'
+            )
+            axarr[worker_idx][0].plot(
+                range(len(self.losses[worker_idx])),
+                exp_moving_average(self.losses[worker_idx], 10),
+                'r'
+            )
 
-        for worker_idx in range(num_workers):
-            losses = self.losses[worker_idx][0:min_size]
-
-            axarr[worker_idx][0].plot(range(min_size), losses, 'b')
-            axarr[worker_idx][0].plot(range(min_size), exp_moving_average(self.losses[worker_idx], 10)[0:min_size],
-                                      'r')
-            # axarr[worker_idx][0].legend(["Loss", "Loss_EMA"])
-
-            scores = self.scores[worker_idx][0:min_size]
-            axarr[worker_idx][1].plot(range(min_size), scores, 'b')
-            axarr[worker_idx][1].plot(range(min_size), exp_moving_average(self.scores[worker_idx], 10)[0:min_size],
-                                      'r')
-            # axarr[worker_idx][1].legend(["Score", "Score_EMA"])
-
-            # axarr[worker_idx][1].scatter(
-            #     x=self.weight_update_episodes,
-            #     y=np.ndarray(scores)[self.weight_update_episodes],
-            #     s=10
-            # )
+            axarr[worker_idx][1].plot(
+                range(len(self.scores[worker_idx])),
+                self.scores[worker_idx],
+                'b'
+            )
+            axarr[worker_idx][1].plot(
+                range(len(self.scores[worker_idx])),
+                exp_moving_average(self.scores[worker_idx], 10),
+                'r'
+            )
 
         plt.savefig("./graphs/loss_score.png")
         plt.close('all')
+
+    # def save_graph(self):
+    #     plt.clf()
+    #
+    #     f, axarr = plt.subplots(nrows=num_workers, ncols=2, sharex=True)
+    #     f.subplots_adjust(hspace=0.25)
+    #
+    #     min_size = sys.maxsize
+    #
+    #     for worker_idx in range(num_workers):
+    #         if len(self.losses[worker_idx]) < min_size:
+    #             min_size = len(self.losses[worker_idx])
+    #         if len(self.scores[worker_idx]) < min_size:
+    #             min_size = len(self.scores[worker_idx])
+    #
+    #     for worker_idx in range(num_workers):
+    #         losses = self.losses[worker_idx][0:min_size]
+    #
+    #         axarr[worker_idx][0].plot(range(min_size), losses, 'b')
+    #         axarr[worker_idx][0].plot(range(min_size), exp_moving_average(self.losses[worker_idx], 10)[0:min_size],
+    #                                   'r')
+    #         # axarr[worker_idx][0].legend(["Loss", "Loss_EMA"])
+    #
+    #         scores = self.scores[worker_idx][0:min_size]
+    #         axarr[worker_idx][1].plot(range(min_size), scores, 'b')
+    #         axarr[worker_idx][1].plot(range(min_size), exp_moving_average(self.scores[worker_idx], 10)[0:min_size],
+    #                                   'r')
+    #         # axarr[worker_idx][1].legend(["Score", "Score_EMA"])
+    #
+    #         # axarr[worker_idx][1].scatter(
+    #         #     x=self.weight_update_episodes,
+    #         #     y=np.ndarray(scores)[self.weight_update_episodes],
+    #         #     s=10
+    #         # )
+    #
+    #     plt.savefig("./graphs/loss_score.png")
+    #     plt.close('all')
 
     def log_info(self, msg):
         self.global_logger.info(msg)
@@ -680,8 +716,13 @@ def server_func(multi_dqn):
     notification_per_workers = 0
     solved_notification_per_workers = 0
 
+    solved_workers = []
+
     while True:
         for worker_idx in range(num_workers):
+            if worker_idx in solved_workers:
+                continue
+
             try:
                 episode_msg = sockets[worker_idx].recv()
             except zmq.error.ZMQError as e:
@@ -777,10 +818,13 @@ def server_func(multi_dqn):
                 else:
                     solved_notification_per_workers += 1
                     episode_ack_msg = {
-                        "type": "solved"
+                        "type": "solved_ack"
                     }
                     send_to_worker(sockets[worker_idx], episode_ack_msg)
             elif episode_msg["type"] == "solved":
+
+                solved_workers.append(int(episode_msg["worker_idx"]))
+
                 msg = "SOLVED!!! - Last Episode: {0} by {1} {2}".format(
                     episode_msg["last_episode"],
                     "DDQN" if ddqn else "DQN",
@@ -789,8 +833,9 @@ def server_func(multi_dqn):
                 multi_dqn.log_info(msg)
                 if verbose: print(msg)
 
-                solved_notification_per_workers = 1
-                multi_dqn.continue_loop = False
+                if score_based_transfer or loss_based_transfer:
+                    solved_notification_per_workers = 1
+                    multi_dqn.continue_loop = False
             else:
                 pass
 
