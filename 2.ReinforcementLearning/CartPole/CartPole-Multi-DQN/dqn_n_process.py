@@ -83,8 +83,8 @@ class DQNAgent:
         self.epsilon = 0.5
 
         # iteratively applying decay til 10% exploration/90% exploitation
-        self.epsilon_min = 0.0001
-        # self.epsilon_min = 0.001
+        # self.epsilon_min = 0.0001
+        self.epsilon_min = 0.001
 
         # coordinate the speed of epsilon decaying
         self.epsilon_coor = 0.3
@@ -447,10 +447,13 @@ class DQNAgent:
                     print(msg)
 
                     self.save_weights()
-                    self.send_solve_info(
-                        socket,
-                        last_episode=episode
-                    )
+
+                    if score_based_transfer or loss_based_transfer:
+                        self.send_solve_info(
+                            socket,
+                            last_episode=episode
+                        )
+                        
                     break
 
         # close the env and write monitor result info to disk
