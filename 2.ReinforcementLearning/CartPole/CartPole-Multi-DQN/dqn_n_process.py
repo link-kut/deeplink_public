@@ -433,6 +433,7 @@ class DQNAgent:
                 if verbose: print(msg)
 
                 if mean_score_over_recent_100_episodes >= self.win_reward:
+                    self.global_max_ema_score = 0
                     msg = "******* Worker {0} - Solved in episode {1}: Mean score = {2} - Epsilon: {3}".format(
                         self.worker_idx,
                         episode,
@@ -774,7 +775,7 @@ def server_func(multi_dqn):
                 multi_dqn.log_info(msg)
                 if verbose: print(msg)
 
-                multi_dqn.global_max_ema_score = 0
+                # multi_dqn.global_max_ema_score = 0
 
             else:
                 pass
