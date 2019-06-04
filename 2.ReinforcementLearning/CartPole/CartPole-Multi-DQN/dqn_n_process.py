@@ -17,7 +17,7 @@ from tensorflow.python.keras.layers import Dropout
 from tensorflow.python.keras.layers import LeakyReLU
 
 print(tf.__version__)
-# tf.config.gpu.set_per_process_memory_fraction(0.4)
+tf.config.gpu.set_per_process_memory_fraction(0.4)
 
 from tensorflow.python.keras.layers import Dense, Input
 
@@ -48,7 +48,9 @@ num_workers = 4
 score_based_transfer = True
 loss_based_transfer = False
 soft_transfer = True
+soft_transfer_fraction = 0.3
 verbose = False
+
 
 
 def exp_moving_average(values, window):
@@ -90,7 +92,7 @@ class DQNAgent:
         self.epsilon_coor = 0.3
 
         # soft update target network
-        self.tau = 0.3
+        self.tau = soft_transfer_fraction
 
         # learning rate
         self.learning_rate = 0.001
@@ -765,7 +767,7 @@ def server_func(multi_dqn):
 
             elif episode_msg["type"] == "solved":
                 solved_workers.append(int(episode_msg["worker_idx"]))
-
+ 
                 msg = "SOLVED!!! - Last Episode: {0} by {1} {2}".format(
                     episode_msg["last_episode"],
                     "DDQN" if ddqn else "DQN",
