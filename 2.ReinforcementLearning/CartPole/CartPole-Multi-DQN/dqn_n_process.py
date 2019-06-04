@@ -45,7 +45,7 @@ ddqn = True
 num_hidden_layers = 3
 num_weight_transfer_hidden_layers = 4
 num_workers = 4
-score_based_transfer = True
+score_based_transfer = False
 loss_based_transfer = False
 soft_transfer = True
 verbose = False
@@ -447,10 +447,13 @@ class DQNAgent:
                     print(msg)
 
                     self.save_weights()
-                    self.send_solve_info(
-                        socket,
-                        last_episode=episode
-                    )
+
+                    if score_based_transfer or loss_based_transfer:
+                        self.send_solve_info(
+                            socket,
+                            last_episode=episode
+                        )
+                        
                     break
 
         # close the env and write monitor result info to disk
