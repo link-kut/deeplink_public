@@ -448,12 +448,11 @@ class DQNAgent:
 
                     self.save_weights()
 
-                    if score_based_transfer or loss_based_transfer:
-                        self.send_solve_info(
-                            socket,
-                            last_episode=episode
-                        )
-                        
+                    self.send_solve_info(
+                        socket,
+                        last_episode=episode
+                    )
+
                     break
 
         # close the env and write monitor result info to disk
@@ -557,7 +556,8 @@ class DQNAgent:
             msg = "Solved by Other Worker"
             self.logger.info(msg)
             if verbose: print(msg)
-            continue_loop = False
+            if score_based_transfer or loss_based_transfer:
+                continue_loop = False
         else:
             pass
 
@@ -566,6 +566,7 @@ class DQNAgent:
     def send_solve_info(self, socket, last_episode):
         solve_msg = {
             "type": "solved",
+            "worker_idx": self.worker_idx,
             "last_episode": last_episode
         }
         solve_msg = pickle.dumps(solve_msg, protocol=-1)
@@ -683,8 +684,13 @@ def server_func(multi_dqn):
     notification_per_workers = 0
     solved_notification_per_workers = 0
 
+    solved_workers = []
+
     while True:
         for worker_idx in range(num_workers):
+            if worker_idx in solved_workers:
+                continue
+
             try:
                 episode_msg = sockets[worker_idx].recv()
             except zmq.error.ZMQError as e:
@@ -784,6 +790,9 @@ def server_func(multi_dqn):
                     }
                     send_to_worker(sockets[worker_idx], episode_ack_msg)
             elif episode_msg["type"] == "solved":
+
+                solved_workers.append(int(episode_msg["worker_idx"]))
+
                 msg = "SOLVED!!! - Last Episode: {0} by {1} {2}".format(
                     episode_msg["last_episode"],
                     "DDQN" if ddqn else "DQN",
