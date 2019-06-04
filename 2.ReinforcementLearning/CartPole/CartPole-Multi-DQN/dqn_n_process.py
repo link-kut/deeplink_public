@@ -824,7 +824,7 @@ def server_func(multi_dqn):
             elif episode_msg["type"] == "solved":
 
                 solved_workers.append(int(episode_msg["worker_idx"]))
-
+ 
                 msg = "SOLVED!!! - Last Episode: {0} by {1} {2}".format(
                     episode_msg["last_episode"],
                     "DDQN" if ddqn else "DQN",
