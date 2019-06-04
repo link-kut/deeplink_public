@@ -68,7 +68,7 @@ def exp_moving_average(values, window):
 
 
 class DQNAgent:
-    def __init__(self, worker_idx, env_id, win_reward, loss_trials, max_episodes):
+    def __init__(self, worker_idx, env_id, win_reward, max_episodes):
         self.worker_idx = worker_idx
         self.env = gym.make(env_id)
         self.env.seed(0)
@@ -98,8 +98,6 @@ class DQNAgent:
         self.learning_rate = 0.001
 
         self.win_reward = win_reward
-
-        self.loss_trials = loss_trials
 
         # Q Network weights filename
         self.weights_file = './dqn_cartpole.h5'
@@ -591,12 +589,12 @@ class DQNAgent:
         self.update_target_model_weights()
 
 
-def worker_func(worker_idx, env_id, win_reward, loss_trials, max_episodes, port):
+def worker_func(worker_idx, env_id, win_reward, max_episodes, port):
     context = zmq.Context()
     socket = context.socket(zmq.REQ)
     socket.connect('tcp://127.0.0.1:' + str(port))
 
-    dqn_agent = DQNAgent(worker_idx, env_id, win_reward, loss_trials, max_episodes)
+    dqn_agent = DQNAgent(worker_idx, env_id, win_reward, max_episodes)
     dqn_agent.start_rl(socket)
 
 
@@ -858,9 +856,6 @@ if __name__ == '__main__':
     # upright
     win_reward = 195.0
 
-    # loss
-    loss_trials = 10
-
     max_episodes = 3000
 
     env_id = "CartPole-v0"
@@ -880,7 +875,6 @@ if __name__ == '__main__':
                 worker_idx,
                 env_id,
                 win_reward,
-                loss_trials,
                 max_episodes,
                 10000 + worker_idx
             ))
