@@ -40,7 +40,7 @@ from numpy.random import seed
 
 import warnings
 warnings.filterwarnings("ignore")
-
+ 
 ddqn = True
 num_hidden_layers = 3
 num_weight_transfer_hidden_layers = 4
