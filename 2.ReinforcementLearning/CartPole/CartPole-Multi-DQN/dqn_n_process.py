@@ -49,9 +49,8 @@ score_based_transfer = True
 loss_based_transfer = False
 soft_transfer = True
 soft_transfer_fraction = 0.3
+episode_update_threshold = 10
 verbose = False
-
-
 
 def exp_moving_average(values, window):
     """ Numpy implementation of EMA
@@ -380,7 +379,7 @@ class DQNAgent:
 
                 send_weights = False
                 # Worker에 의하여 더 높은 Score를 찾음
-                if episode > 10 and score_based_transfer and self.global_max_ema_score < ema_score:
+                if episode > episode_update_threshold and score_based_transfer and self.global_max_ema_score < ema_score:
                     self.global_max_ema_score = ema_score
                     send_weights = True
                     self.update_target_model_weights()
@@ -393,7 +392,7 @@ class DQNAgent:
                     if verbose: print(msg)
 
                 # Worker에 의하여 더 낮은 Loss를 찾음
-                if episode > 10 and loss_based_transfer and ema_loss < self.global_min_ema_loss:
+                if episode > episode_update_threshold and loss_based_transfer and ema_loss < self.global_min_ema_loss:
                     self.global_min_ema_loss = ema_loss
                     send_weights = True
                     self.update_target_model_weights()
