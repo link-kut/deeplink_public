@@ -40,7 +40,7 @@ from numpy.random import seed
 
 import warnings
 warnings.filterwarnings("ignore")
- 
+
 ddqn = True
 num_hidden_layers = 3
 num_weight_transfer_hidden_layers = 4
@@ -835,7 +835,7 @@ def server_func(multi_dqn):
 
                 if score_based_transfer or loss_based_transfer:
                     solved_notification_per_workers = 1
-                    multi_dqn.continue_loop = False
+                multi_dqn.continue_loop = False
             else:
                 pass
 
