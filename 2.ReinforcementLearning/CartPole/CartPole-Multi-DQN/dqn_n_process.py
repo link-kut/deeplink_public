@@ -51,6 +51,8 @@ soft_transfer = True
 soft_transfer_fraction = 0.3
 episode_update_threshold = 10
 verbose = False
+global_max_ema_initial_score = 0
+done_flag = False
 
 def exp_moving_average(values, window):
     """ Numpy implementation of EMA
@@ -135,7 +137,7 @@ class DQNAgent:
 
         self.max_episodes = max_episodes
 
-        self.global_max_ema_score = 0
+        self.global_max_ema_score = global_max_ema_initial_score
         self.global_min_ema_loss = 1000000000
 
         self.local_scores = []
@@ -315,6 +317,7 @@ class DQNAgent:
     #         self.epsilon = 0.0001
 
     def start_rl(self, socket):
+        global done_flag
         # should be solved in this number of episodes
         state_size = int(self.env.observation_space.shape[0] / 2)
         batch_size = 64
@@ -377,9 +380,13 @@ class DQNAgent:
                 mean_score_over_recent_100_episodes = np.mean(self.score_dequeue)
                 mean_loss_over_recent_100_episodes = np.mean(self.loss_dequeue)
 
+                if done_flag == True:
+                    done_flag = False
+                    self.global_max_ema_score = 0
+
                 send_weights = False
                 # Worker에 의하여 더 높은 Score를 찾음
-                if episode > episode_update_threshold and score_based_transfer and self.global_max_ema_score < ema_score:
+                if episode > episode_update_threshold and score_based_transfer and self.global_max_ema_score < ema_score and not done_flag:
                     self.global_max_ema_score = ema_score
                     send_weights = True
                     self.update_target_model_weights()
@@ -392,7 +399,7 @@ class DQNAgent:
                     if verbose: print(msg)
 
                 # Worker에 의하여 더 낮은 Loss를 찾음
-                if episode > episode_update_threshold and loss_based_transfer and ema_loss < self.global_min_ema_loss:
+                if episode > episode_update_threshold and loss_based_transfer and ema_loss < self.global_min_ema_loss and not done_flag:
                     self.global_min_ema_loss = ema_loss
                     send_weights = True
                     self.update_target_model_weights()
@@ -415,7 +422,7 @@ class DQNAgent:
                 )
 
                 msg = "Worker {0}-Ep.{1:>2d}: Loss={2:6.4f} (EMA: {3:6.4f}, Mean: {4:6.4f}), Score={5:5.1f} (EMA: {" \
-                      "6:>4.2f}, Mean: {7:>4.2f}), Epsilon: {8:>6.4f}, Has_Rand_Act:{9}, global_max_ema_score={10:5.1f}".format(
+                      "6:>4.2f}, Mean: {7:>4.2f}), Epsilon: {8:>6.4f}, Has_Rand_Act:{9}, global_max_ema_score={10:5.1f}, done_flag={11}".format(
                     self.worker_idx,
                     episode,
                     loss,
@@ -426,14 +433,15 @@ class DQNAgent:
                     mean_score_over_recent_100_episodes,
                     self.epsilon,
                     has_random_action,
-                    self.global_max_ema_score
+                    self.global_max_ema_score,
+                    done_flag
                 )
 
                 self.logger.info(msg)
                 if verbose: print(msg)
 
                 if mean_score_over_recent_100_episodes >= self.win_reward:
-                    self.global_max_ema_score = 0
+                    done_flag = True
                     msg = "******* Worker {0} - Solved in episode {1}: Mean score = {2} - Epsilon: {3}".format(
                         self.worker_idx,
                         episode,
@@ -445,12 +453,14 @@ class DQNAgent:
 
                     self.save_weights()
 
-                    self.send_solve_info(
+                    done_flag = self.send_solve_info(
                         socket,
                         last_episode=episode
                     )
 
                     break
+
+
 
         # close the env and write monitor result info to disk
         self.env.close()
@@ -552,6 +562,8 @@ class DQNAgent:
             pass
 
     def send_solve_info(self, socket, last_episode):
+        global done_flag
+        done_flag = True
         solve_msg = {
             "type": "solved",
             "worker_idx": self.worker_idx,
@@ -560,6 +572,8 @@ class DQNAgent:
         solve_msg = pickle.dumps(solve_msg, protocol=-1)
         solve_msg = zlib.compress(solve_msg)
         socket.send(solve_msg)
+
+        return done_flag
 
     def transfer_update(self, best_weights):
         for layer_id in range(num_weight_transfer_hidden_layers):
@@ -775,7 +789,7 @@ def server_func(multi_dqn):
                 multi_dqn.log_info(msg)
                 if verbose: print(msg)
 
-                # multi_dqn.global_max_ema_score = 0
+                multi_dqn.global_max_ema_score = 0
 
             else:
                 pass
@@ -793,7 +807,7 @@ if __name__ == '__main__':
     # a reward of +1 is provided for every timestep the pole remains
     # upright
 
-    win_reward = 195.0
+    win_reward = 100.0
 
     max_episodes = 3000
 
