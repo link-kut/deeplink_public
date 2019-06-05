@@ -807,7 +807,7 @@ if __name__ == '__main__':
     # a reward of +1 is provided for every timestep the pole remains
     # upright
 
-    win_reward = 100.0
+    win_reward = 195.0
 
     max_episodes = 3000
 
