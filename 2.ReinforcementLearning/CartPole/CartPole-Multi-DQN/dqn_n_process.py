@@ -768,7 +768,8 @@ def server_func(multi_dqn):
             elif episode_msg["type"] == "solved":
                 solved_workers.append(int(episode_msg["worker_idx"]))
  
-                msg = "SOLVED!!! - Last Episode: {0} by {1} {2}".format(
+                msg = "!!!!!!! SOLVED BY WORKER {0} - Last Episode: {1} by {2} {3}".format(
+                    episode_msg["worker_idx"],
                     episode_msg["last_episode"],
                     "DDQN" if ddqn else "DQN",
                     "with Transfer" if score_based_transfer or loss_based_transfer else "Without Transfer"
@@ -793,7 +794,7 @@ if __name__ == '__main__':
     # the cart pole has not fallen over and it has achieved an average reward of 195.0.
     # a reward of +1 is provided for every timestep the pole remains
     # upright
-    win_reward = 120.0
+    win_reward = 150.0
 
     # loss
     loss_trials = 10
