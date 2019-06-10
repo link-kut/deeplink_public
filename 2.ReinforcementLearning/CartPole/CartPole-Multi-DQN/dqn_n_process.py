@@ -45,7 +45,7 @@ ddqn = True
 num_hidden_layers = 3
 num_weight_transfer_hidden_layers = 4
 num_workers = 4
-score_based_transfer = True
+score_based_transfer = False 
 loss_based_transfer = False
 soft_transfer = True
 soft_transfer_fraction = 0.3
@@ -511,25 +511,26 @@ class DQNAgent:
 
                 if best_weights is not None and len(best_weights) > 0 and not send_weights:
                     # Worker 스스로는 Best Score/Weights 를 못 찾았지만 서버로 부터 Best Score/weights 를 받은 경우
-                    self.global_max_ema_score = global_max_ema_score
+                    if self.global_max_ema_score < global_max_ema_score:
+                        self.global_max_ema_score = global_max_ema_score
 
-                    for layer_id in range(num_weight_transfer_hidden_layers):
-                        layer_name = "layer_{0}_{1}".format(
-                            layer_id,
-                            worker_idx
+                        for layer_id in range(num_weight_transfer_hidden_layers):
+                            layer_name = "layer_{0}_{1}".format(
+                                layer_id,
+                                worker_idx
+                            )
+                            self.q_model.get_layer(name=layer_name).set_weights(best_weights[layer_id])
+
+                        self.update_target_model_weights()
+
+                        msg = ">>> Worker {0}: Receive New Best Weights from Worker {1} and Set Them to Local Model!!! - " \
+                              "global_max_ema_score: {2}".format(
+                            self.worker_idx,
+                            episode_ack_msg["best_found_worker"],
+                            self.global_max_ema_score
                         )
-                        self.q_model.get_layer(name=layer_name).set_weights(best_weights[layer_id])
-
-                    self.update_target_model_weights()
-
-                    msg = ">>> Worker {0}: Receive New Best Weights from Worker {1} and Set Them to Local Model!!! - " \
-                          "global_max_ema_score: {2}".format(
-                        self.worker_idx,
-                        episode_ack_msg["best_found_worker"],
-                        self.global_max_ema_score
-                    )
-                    self.logger.info(msg)
-                    if verbose: print(msg)
+                        self.logger.info(msg)
+                        if verbose: print(msg)
 
             if loss_based_transfer:
                 global_min_ema_loss = episode_ack_msg["global_min_ema_loss"]
