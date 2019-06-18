@@ -13,15 +13,14 @@ from tensorflow.keras.optimizers import RMSprop
 from tensorflow.keras.utils import to_categorical
 import matplotlib.pyplot as plt
 
+print(tf.__version__)
+
 ENV = 'CartPole-v0'
 env = gym.make(ENV)
 CONTINUOUS = False
 # num_states = env.observation_space.shape[0]
 
-EPISODES = 100000
-
 LOSS_CLIPPING = 0.2  # Only implemented clipping for the surrogate loss, paper said it was best
-EPOCHS = 10
 NOISE = 1.0  # Exploration noise
 
 GAMMA = 0.99
@@ -35,8 +34,6 @@ NUM_LAYERS = 2
 ENTROPY_LOSS = 1e-3
 LR = 1e-4  # Lower lr stabilises training greatly
 
-DUMMY_ACTION, DUMMY_VALUE = np.zeros((1, NUM_ACTIONS)), np.zeros((1, 1))
-
 '''def exponential_average(old, new, b1):
     return old * b1 + (1-b1) * new'''
 
@@ -46,10 +43,12 @@ def proximal_policy_optimization_loss(advantage, old_prediction):
         prob = y_true * y_pred
         old_prob = y_true * old_prediction
         r = prob / (old_prob + 1e-10)
-        return -K.mean(K.minimum(r * advantage, K.clip(r, min_value=1 - LOSS_CLIPPING,
-                                                       max_value=1 + LOSS_CLIPPING) * advantage) + ENTROPY_LOSS * (
-                                   prob * K.log(prob + 1e-10)))
-
+        return -K.mean(
+            K.minimum(
+                r * advantage,
+                K.clip(r, min_value=1 - LOSS_CLIPPING, max_value=1 + LOSS_CLIPPING) * advantage
+            ) + ENTROPY_LOSS * (prob * K.log(prob + 1e-10))
+        )
     return loss
 
 
@@ -66,7 +65,6 @@ class Agent:
         self.reward = []
         self.reward_over_time = []
         self.name = self.get_name()
-        self.gradient_steps = 0
         self.scores = []
         self.episode_reward = 0
 
@@ -81,30 +79,42 @@ class Agent:
         advantage = Input(shape=(1,))
         old_prediction = Input(shape=(NUM_ACTIONS,))
 
-        x = Dense(HIDDEN_SIZE, activation='tanh')(state_input)
+        x = Dense(units=HIDDEN_SIZE, activation='tanh')(state_input)
         for _ in range(NUM_LAYERS - 1):
             x = Dense(HIDDEN_SIZE, activation='tanh')(x)
 
-        out_actions = Dense(NUM_ACTIONS, activation='softmax', name='output')(x)
+        out_actions = Dense(units=NUM_ACTIONS, activation='softmax', name='output')(x)
 
-        model = Model(inputs=[state_input, advantage, old_prediction], outputs=[out_actions])
-        model.compile(optimizer=Adam(lr=LR),
-                      loss=[proximal_policy_optimization_loss(advantage=advantage, old_prediction=old_prediction)])
+        model = Model(
+            inputs=[state_input, advantage, old_prediction],
+            outputs=[out_actions],
+            name="actor_model"
+        )
+        model.compile(
+            optimizer=Adam(lr=LR),
+            loss=[proximal_policy_optimization_loss(advantage=advantage, old_prediction=old_prediction)]
+        )
         model.summary()
 
         return model
 
     def build_critic(self):
-
         state_input = Input(shape=(NUM_STATE,))
-        x = Dense(HIDDEN_SIZE, activation='tanh')(state_input)
+        x = Dense(units=HIDDEN_SIZE, activation='tanh')(state_input)
         for _ in range(NUM_LAYERS - 1):
-            x = Dense(HIDDEN_SIZE, activation='tanh')(x)
+            x = Dense(units=HIDDEN_SIZE, activation='tanh')(x)
 
-        out_value = Dense(1)(x)
+        out_value = Dense(units=1)(x)
 
-        model = Model(inputs=[state_input], outputs=[out_value])
-        model.compile(optimizer=Adam(lr=LR), loss='mse')
+        model = Model(
+            inputs=[state_input],
+            outputs=[out_value],
+            name="critic_model"
+        )
+        model.compile(
+            optimizer=Adam(lr=LR),
+            loss='mse'
+        )
 
         model.summary()
 
@@ -121,7 +131,11 @@ class Agent:
         self.episode_reward = 0
 
     def get_action(self):
+        DUMMY_VALUE = np.zeros((1, 1))
+        DUMMY_ACTION = np.zeros((1, NUM_ACTIONS))
+
         p = self.actor.predict([self.observation.reshape(1, NUM_STATE), DUMMY_VALUE, DUMMY_ACTION])
+
         if self.val is False:
             action = np.random.choice(NUM_ACTIONS, p=np.nan_to_num(p[0]))
         else:
@@ -140,7 +154,7 @@ class Agent:
         tmp_batch = [[], [], []]
 
         while len(batch[0]) < BUFFER_SIZE:
-            action, action_matrix, predicted_action = self.get_action()
+            action, action_matrix, actor_p = self.get_action()
             observation, reward, done, info = self.env.step(action)
 
             self.reward.append(reward)
@@ -148,7 +162,7 @@ class Agent:
 
             tmp_batch[0].append(self.observation)
             tmp_batch[1].append(action_matrix)
-            tmp_batch[2].append(predicted_action)
+            tmp_batch[2].append(actor_p)
             self.observation = observation
 
             if done:
@@ -162,35 +176,55 @@ class Agent:
                         batch[2].append(pred)
                         batch[3].append(r)
                 tmp_batch = [[], [], []]
-                print("EPISODE REWARD     ", self.episode_reward)
+                #print("EPISODE REWARD     ", self.episode_reward)
                 self.scores.append(self.episode_reward)
                 self.reset_env()
 
-        obs, action, pred, reward = np.array(batch[0]), np.array(batch[1]), np.array(batch[2]), np.reshape(
-            np.array(batch[3]), (len(batch[3]), 1))
+        obs = np.array(batch[0])
+        action = np.array(batch[1])
+        pred = np.array(batch[2])
         pred = np.reshape(pred, (pred.shape[0], pred.shape[2]))
-        return obs, action, pred, reward
+
+        reward = np.reshape(np.array(batch[3]), (len(batch[3]), 1))
+
+        return obs[:BUFFER_SIZE], action[:BUFFER_SIZE], pred[:BUFFER_SIZE], reward[:BUFFER_SIZE]
 
     def run(self):
-        while self.episode < EPISODES:
-            # print("EPISODE    ",self.episode)
+
+        total_episodes = 100000
+        epochs = 10
+
+        while self.episode < total_episodes:
+            if len(self.scores) > 1:
+                print("EPISODE    ", self.episode, self.scores[-1])
+
             obs, action, pred, reward = self.get_batch()
-            obs, action, pred, reward = obs[:BUFFER_SIZE], action[:BUFFER_SIZE], pred[:BUFFER_SIZE], reward[
-                                                                                                     :BUFFER_SIZE]
             old_prediction = pred
             pred_values = self.critic.predict(obs)
 
             advantage = reward - pred_values
             # advantage = (advantage - advantage.mean()) / advantage.std()
-            # print("STARTING TRAINING--------------------------")
-            actor_loss = self.actor.fit([obs, advantage, old_prediction], [action], batch_size=BATCH_SIZE, shuffle=True,
-                                        epochs=EPOCHS, verbose=0)
-            critic_loss = self.critic.fit([obs], [reward], batch_size=BATCH_SIZE, shuffle=True, epochs=EPOCHS,
-                                          verbose=0)
-            self.gradient_steps += 1
 
-            '''if self.episode % 10 == 0:
-                print ('(episode, score) = ' + str((self.episode,self.episode_reward)))'''
+            actor_loss = self.actor.fit(
+                x=[obs, advantage, old_prediction],
+                y=[action],
+                batch_size=BATCH_SIZE,
+                shuffle=True,
+                epochs=epochs,
+                verbose=0
+            )
+
+            critic_loss = self.critic.fit(
+                x=[obs],
+                y=[reward],
+                batch_size=BATCH_SIZE,
+                shuffle=True,
+                epochs=epochs,
+                verbose=0
+            )
+
+            if self.episode % 10 == 0:
+                print('(episode, score) = ' + str((self.episode, self.episode_reward)))
 
             # Solved condition
             if len(self.scores) >= 110:
