@@ -557,6 +557,7 @@ class DQNAgent:
                 msg = "Solved by Other Worker"
                 self.logger.info(msg)
                 if verbose: print(msg)
+                self.global_min_ema_loss = 0
                 continue_loop = False
         else:
             pass
