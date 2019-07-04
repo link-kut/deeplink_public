@@ -15,7 +15,8 @@ import matplotlib.pyplot as plt
 
 print(tf.__version__)
 
-ENV = 'CartPole-v0'
+
+
 env = gym.make(ENV)
 CONTINUOUS = False
 # num_states = env.observation_space.shape[0]
